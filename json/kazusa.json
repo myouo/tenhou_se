@@ -1,0 +1,132 @@
+{
+  "ver": 1.0,
+  "meta": {
+    "id": "kazusa",
+    "name": "冬馬かずさ",
+    "author": "pojelo199"
+  },
+  "se": {
+    "9": {
+      "url": "https://se.nivalis.is/kazusa/pei.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/pei.mp3",
+        "https://se.nivalis.is/kazusa/pei2.mp3",
+        "https://se.nivalis.is/kazusa/pei3.mp3"
+      ]
+    },
+    "25": {
+      "url": "https://se.nivalis.is/kazusa/pon.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/pon.mp3",
+        "https://se.nivalis.is/kazusa/pon2.mp3",
+        "https://se.nivalis.is/kazusa/pon3.mp3"
+      ]
+    },
+    "26": {
+      "url": "https://se.nivalis.is/kazusa/pon.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/pon.mp3",
+        "https://se.nivalis.is/kazusa/pon2.mp3",
+        "https://se.nivalis.is/kazusa/pon3.mp3"
+      ]
+    },
+    "27": {
+      "url": "https://se.nivalis.is/kazusa/kan.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/kan.mp3",
+        "https://se.nivalis.is/kazusa/kan2.mp3",
+        "https://se.nivalis.is/kazusa/kan3.mp3",
+        "https://se.nivalis.is/kazusa/kan4.mp3"
+      ]
+    },
+    "28": {
+      "url": "https://se.nivalis.is/kazusa/kan.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/kan.mp3",
+        "https://se.nivalis.is/kazusa/kan2.mp3",
+        "https://se.nivalis.is/kazusa/kan3.mp3",
+        "https://se.nivalis.is/kazusa/kan4.mp3"
+      ]
+    },
+    "29": {
+      "url": "https://se.nivalis.is/kazusa/chi.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/chi.mp3",
+        "https://se.nivalis.is/kazusa/chi2.mp3",
+        "https://se.nivalis.is/kazusa/chi3.mp3"
+      ]
+    },
+    "30": {
+      "url": "https://se.nivalis.is/kazusa/chi.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/chi.mp3",
+        "https://se.nivalis.is/kazusa/chi2.mp3",
+        "https://se.nivalis.is/kazusa/chi3.mp3"
+      ]
+    },
+    "31": {
+      "url": "https://se.nivalis.is/kazusa/riichi.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/riichi.mp3"
+      ]
+    },
+    "32": {
+      "url": "https://se.nivalis.is/kazusa/riichi.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/riichi.mp3"
+      ]
+    },
+    "33": {
+      "url": "https://se.nivalis.is/kazusa/ron.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/ron.mp3",
+        "https://se.nivalis.is/kazusa/ron2.mp3",
+        "https://se.nivalis.is/kazusa/ron3.mp3"
+      ]
+    },
+    "34": {
+      "url": "https://se.nivalis.is/kazusa/ron.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/ron.mp3",
+        "https://se.nivalis.is/kazusa/ron2.mp3",
+        "https://se.nivalis.is/kazusa/ron3.mp3"
+      ]
+    },
+    "35": {
+      "url": "https://se.nivalis.is/kazusa/tsumo.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/tsumo.mp3",
+        "https://se.nivalis.is/kazusa/tsumo2.mp3",
+        "https://se.nivalis.is/kazusa/tsumo3.mp3",
+        "https://se.nivalis.is/kazusa/tsumo4.mp3"
+      ]
+    },
+    "36": {
+      "url": "https://se.nivalis.is/kazusa/tsumo.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/tsumo.mp3",
+        "https://se.nivalis.is/kazusa/tsumo2.mp3",
+        "https://se.nivalis.is/kazusa/tsumo3.mp3",
+        "https://se.nivalis.is/kazusa/tsumo4.mp3"
+      ]
+    },
+    "40": {
+      "url": "https://se.nivalis.is/kazusa/yoroshiku.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/yoroshiku.mp3",
+        "https://se.nivalis.is/kazusa/hajime.mp3",
+        "https://se.nivalis.is/kazusa/nakenai.mp3"
+      ]
+    },
+    "41": {
+      "url": "https://se.nivalis.is/kazusa/yakuman.mp3",
+      "urls": [
+        "https://se.nivalis.is/kazusa/yakuman.mp3",
+        "https://se.nivalis.is/kazusa/yakuman2.mp3",
+        "https://se.nivalis.is/kazusa/yakuman3.mp3",
+        "https://se.nivalis.is/kazusa/yakuman4.mp3",
+        "https://se.nivalis.is/kazusa/yakuman5.mp3"
+      ]
+    }
+  }
+}
