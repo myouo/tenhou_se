@@ -34,14 +34,14 @@
     const V4_ID_TO_SLOT = {
         107: '9',   // NUKI (拔北)
         // PON (25=C/M, 26=F)
-        127: '25', 128: '25',
-        132: '26',
+        136: '25', 137: '25',
+        141: '26',
         // KAN (27=C/M, 28=F)
-        118: '27', 119: '27',
-        123: '28',
+        127: '27', 128: '27',
+        132: '28',
         // CHI (29=C/M, 30=F)
-        136: '29', 137: '29',
-        141: '30',
+        118: '29', 119: '29',
+        123: '30',
         // RIICHI (31=M, 32=F)
         146: '31',
         150: '32',
@@ -685,14 +685,14 @@
 
         const root = document.createElement('div');
         root.id = 'tenhou-se-gui-root';
-        root.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;font-size:13px;line-height:1.4;';
+        root.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;align-items:flex-end;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;font-size:13px;line-height:1.4;';
 
         const toggleBtn = document.createElement('button');
         toggleBtn.textContent = '🎵 自定义 SE';
         toggleBtn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#ffffff;color:#0f172a;border:1px solid #cbd5e1;border-radius:999px;padding:8px 14px;cursor:pointer;box-shadow:0 6px 20px rgba(15,23,42,.16),0 1px 3px rgba(15,23,42,.08);font-weight:600;font-size:13px;letter-spacing:.2px;';
 
         const panel = document.createElement('div');
-        panel.style.cssText = 'display:none;width:348px;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
+        panel.style.cssText = 'display:none;width:348px;max-height:calc(100vh - 80px);overflow-y:auto;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
 
         panel.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #f1f5f9;">
