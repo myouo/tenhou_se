@@ -320,21 +320,28 @@
 
     if (win.AudioBufferSourceNode) {
         const srcProto = win.AudioBufferSourceNode.prototype;
-        const origStart = srcProto.start;
-        srcProto.start = function (...args) {
-            try {
-                const slotId = this.buffer && audioBufToSlot.get(this.buffer);
-                const pool = slotId && decodedPools.get(slotId);
-                if (pool && pool.length > 1) {
-                    const idx = pickRandomIndex(slotId, pool.length);
-                    this.buffer = pool[idx];
-                    console.log(`[TenhouRandomSE] WebAudio 随机 slot[${slotId}] -> #${idx + 1}`);
-                }
-            } catch (e) {
-                console.warn('[TenhouRandomSE] WebAudio 随机切换异常:', e);
-            }
-            return origStart.apply(this, args);
-        };
+        const bufDesc = Object.getOwnPropertyDescriptor(srcProto, 'buffer');
+        if (bufDesc && bufDesc.set) {
+            Object.defineProperty(srcProto, 'buffer', {
+                configurable: true,
+                enumerable: bufDesc.enumerable,
+                get: bufDesc.get,
+                set(val) {
+                    try {
+                        const slotId = val && audioBufToSlot.get(val);
+                        const pool = slotId && decodedPools.get(slotId);
+                        if (pool && pool.length > 1) {
+                            const idx = pickRandomIndex(slotId, pool.length);
+                            val = pool[idx];
+                            console.log(`[TenhouRandomSE] WebAudio 随机 slot[${slotId}] -> #${idx + 1}`);
+                        }
+                    } catch (e) {
+                        console.warn('[TenhouRandomSE] WebAudio 随机切换异常:', e);
+                    }
+                    return bufDesc.set.call(this, val);
+                },
+            });
+        }
     }
 
     const OrigAudio = win.Audio;
