@@ -727,7 +727,6 @@
                             // 组合音效保留天凤原生拍牌/特效声（113=鸣牌拍桌, 114=立直/和牌重音, 145=立直棒）
                             if (id >= 1010 && id <= 1018) origN.call(this, 113, arg, delayMs);
                             else if (id >= 1022 && id <= 1027) origN.call(this, 114, arg, delayMs);
-                            else if (id === 1020 || id === 1021) origN.call(this, 145, arg, delayMs);
                             console.log(`[TenhouRandomSE] /4/ 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
                             return;
                         }
