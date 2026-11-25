@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         天凤 通用多语音随机 SE (支持 tenhou.net/3 & tenhou.net/4 + GUI)
 // @namespace    https://github.com/myouo/tenhou_se
-// @version      3.0.0
-// @description  同时支持 tenhou.net/3 与 tenhou.net/4！内置悬浮 GUI 输入 se.json 链接，预加载多版本语音到内存，局内零延迟随机播放
+// @version      3.1.0
+// @description  同时支持 tenhou.net/3 与 tenhou.net/4！无侵入式底层 WebAudio 实时热替换，内置悬浮 GUI 随时切换角色语音，零延迟且高可靠
 // @match        https://tenhou.net/3/*
 // @match        https://tenhou.net/4/*
 // @run-at       document-start
@@ -29,34 +29,31 @@
     const STORAGE_KEY_ACTIVE_ID = 'tenhou_custom_se_active_id_v3';
     const VIRTUAL_SLOT_PREFIX = 'https://tenhou-random-se.local/slot/';
 
-    // tenhou.net/4/latest.js 内部音效函数 N(id, arg, delayMs) 的精确数字 ID -> /3/ SE 槽位映射
+    // tenhou.net/4/latest.js 资源包中的原始语音 ID -> /3/ SE 槽位映射
+    // 注：不映射 145（经典立直棒音效，男女立直时也会叠加播放）与 111（开局/役满共用提示音）
     const V4_ID_TO_SLOT = {
         107: '9',   // NUKI (拔北)
-        112: '40',  // START (开局)
-        1029: '41', // YAKUMAN (役满)
         // PON (25=C/M, 26=F)
-        127: '25', 128: '25', 1013: '25', 1014: '25',
-        132: '26', 1015: '26',
+        127: '25', 128: '25',
+        132: '26',
         // KAN (27=C/M, 28=F)
-        118: '27', 119: '27', 1016: '27', 1017: '27',
-        123: '28', 1018: '28',
+        118: '27', 119: '27',
+        123: '28',
         // CHI (29=C/M, 30=F)
-        136: '29', 137: '29', 1010: '29', 1011: '29',
-        141: '30', 1012: '30',
-        // RIICHI (31=C/M, 32=F)
-        145: '31', 146: '31', 1019: '31', 1020: '31',
-        150: '32', 1021: '32',
+        136: '29', 137: '29',
+        141: '30',
+        // RIICHI (31=M, 32=F)
+        146: '31',
+        150: '32',
         // RON (33=C/M, 34=F)
-        154: '33', 155: '33', 1022: '33', 1023: '33',
-        159: '34', 1024: '34',
+        154: '33', 155: '33',
+        159: '34',
         // TSUMO (35=C/M, 36=F)
-        163: '35', 164: '35', 1025: '35', 1026: '35',
-        168: '36', 1027: '36',
+        163: '35', 164: '35',
+        168: '36',
     };
 
-    const urlAssetCache = new Map();
-    const slotPools = new Map();     // slotId -> Array<{ url, arrayBuffer, blobUrl }>
-    const decodedPools = new Map();  // slotId -> AudioBuffer[]
+    const urlAssetCache = new Map(); // resolvedUrl -> Promise<{ url, arrayBuffer, blobUrl }>
     const lastPickIdx = new Map();
 
     const arrayBufToSlot = new WeakMap();
@@ -64,10 +61,24 @@
     const audioElemToSlot = new WeakMap();
     const blobUrlToSlot = new Map();
 
+    // /4/ 资源包二进制指纹索引（length:fnv1a32 -> slotId），无需修改 latest.js 源码
+    const v4FingerprintToSlot = new Map();
+    const pendingV4Xhrs = new Set();
+
     let sharedAudioCtx = null;
-    let v4DecodeCounter = 0;
-    let loadedCharLabel = '未加载';
+    let lastGainNode = null;
+    let loadGeneration = 0;
     let uiStatusUpdater = null;
+
+    // 原子化当前生效的语音包快照，切换时后台加载并解码完成后一次性替换，期间不断流
+    let activePack = {
+        label: '未加载',
+        url: '',
+        slotPools: new Map(),     // slotId -> Array<{ url, arrayBuffer, blobUrl }>
+        decodedPools: new Map(),  // slotId -> AudioBuffer[]
+        decodedCtx: null,
+        decodingSlots: new Set(),
+    };
 
     const AudioCtx = win.AudioContext || win.webkitAudioContext;
     const OrigAudioContextProto = AudioCtx ? AudioCtx.prototype : null;
@@ -159,6 +170,60 @@
         return idx;
     }
 
+    function fingerprintBytes(u8, offset, len) {
+        let h = 0x811c9dc5;
+        const end = offset + len;
+        for (let i = offset; i < end; i++) {
+            h ^= u8[i];
+            h = Math.imul(h, 0x01000193);
+        }
+        return `${len}:${h >>> 0}`;
+    }
+
+    // 解析 tenhou.net/4 二进制资源包 [uint32 id, int16 w, int16 h, uint32 len, payload...]
+    function tryIndexTenhouV4Pack(buf) {
+        if (!(buf instanceof ArrayBuffer) || buf.byteLength < 16) return 0;
+        const view = new DataView(buf);
+        const u8 = new Uint8Array(buf);
+        let pos = 4;
+        const candidates = [];
+
+        while (pos + 12 <= buf.byteLength) {
+            const id = view.getUint32(pos, true);
+            const w = view.getInt16(pos + 4, true);
+            const h = view.getInt16(pos + 6, true);
+            const len = view.getUint32(pos + 8, true);
+            pos += 12;
+            if (len > buf.byteLength - pos) return 0; // 非天凤资源包格式
+            if (w === 0 && h === 0 && len > 0 && V4_ID_TO_SLOT[id]) {
+                candidates.push({ id, offset: pos, len });
+            }
+            pos += len;
+        }
+
+        if (pos !== buf.byteLength || candidates.length === 0) return 0;
+
+        let indexed = 0;
+        for (const item of candidates) {
+            const fp = fingerprintBytes(u8, item.offset, item.len);
+            v4FingerprintToSlot.set(fp, V4_ID_TO_SLOT[item.id]);
+            indexed++;
+        }
+        console.log(`[TenhouRandomSE] 已从 /4/ 资源包精确索引 ${indexed} 个语音 ID`);
+        return indexed;
+    }
+
+    function ensureV4XhrsIndexed() {
+        for (const xhr of Array.from(pendingV4Xhrs)) {
+            if (xhr.readyState === 4) {
+                pendingV4Xhrs.delete(xhr);
+                if (xhr.status === 200 && xhr.response instanceof ArrayBuffer) {
+                    tryIndexTenhouV4Pack(xhr.response);
+                }
+            }
+        }
+    }
+
     const origFetch = win.fetch.bind(win);
 
     async function smartRequest(url, responseType) {
@@ -171,7 +236,7 @@
                 }
                 return { responseText: await res.text() };
             } catch {
-                // 回退到 GM_xmlhttpRequest
+                // 回退到 GM_xmlhttpRequest（绕过 CORS 限制）
             }
         }
         return new Promise((resolve, reject) => {
@@ -198,6 +263,9 @@
             const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
             const blobUrl = URL.createObjectURL(blob);
             return { url: resolvedUrl, arrayBuffer, blobUrl };
+        }).catch((err) => {
+            urlAssetCache.delete(resolvedUrl);
+            throw err;
         });
         urlAssetCache.set(resolvedUrl, p);
         return p;
@@ -211,18 +279,56 @@
         }
     }
 
-    async function processCustomSeJson(jsonUrl, rawText) {
+    async function decodeSlotList(ctx, slotId, pool) {
+        if (!ctx || !OrigAudioContextProto || !pool || !pool.length) return [];
+        const origDecode = OrigAudioContextProto.decodeAudioData;
+        const decodedList = [];
+        for (const item of pool) {
+            try {
+                const decoded = await origDecode.call(ctx, item.arrayBuffer.slice(0));
+                audioBufToSlot.set(decoded, slotId);
+                decodedList.push(decoded);
+            } catch (e) {
+                console.warn('[TenhouRandomSE] WebAudio 解码失败:', slotId, item.url, e);
+            }
+        }
+        return decodedList;
+    }
+
+    async function ensureSlotDecoded(ctx, pack, slotId) {
+        if (!ctx || !pack || pack.decodingSlots.has(slotId)) return;
+        const pool = pack.slotPools.get(slotId);
+        if (!pool || !pool.length) return;
+        if (pack.decodedCtx === ctx && pack.decodedPools.has(slotId)) return;
+        pack.decodingSlots.add(slotId);
+        try {
+            const decodedList = await decodeSlotList(ctx, slotId, pool);
+            if (decodedList.length > 0 && pack === activePack) {
+                pack.decodedCtx = ctx;
+                pack.decodedPools.set(slotId, decodedList);
+            }
+        } finally {
+            pack.decodingSlots.delete(slotId);
+        }
+    }
+
+    async function ensurePackDecoded(ctx, pack) {
+        if (!ctx || !pack || pack.slotPools.size === 0) return;
+        if (pack.decodedCtx === ctx && pack.decodedPools.size === pack.slotPools.size) return;
+        await Promise.all(Array.from(pack.slotPools.keys()).map((id) => ensureSlotDecoded(ctx, pack, id)));
+    }
+
+    async function buildPackFromSeJson(jsonUrl, rawText, myGen) {
         const data = JSON.parse(rawText);
         if (!data || typeof data !== 'object' || !data.se || typeof data.se !== 'object') {
-            return rawText;
+            throw new Error('无效的 se.json 格式');
         }
-
-// 等全部新资源预加载完成后再原子替换，避免加载期间无声
 
         const baseForRel = (data.meta && data.meta.base)
             ? resolveAudioUrl(data.meta.base, jsonUrl)
             : jsonUrl;
 
+        const nextSlotPools = new Map();
         const rewrittenSe = {};
         const preloadTasks = [];
 
@@ -252,7 +358,7 @@
                 ).then((assets) => {
                     const valid = assets.filter(Boolean);
                     if (valid.length > 0) {
-                        slotPools.set(slotId, valid);
+                        nextSlotPools.set(slotId, valid);
                         for (const item of valid) {
                             blobUrlToSlot.set(item.blobUrl, slotId);
                         }
@@ -262,64 +368,73 @@
         }
 
         await Promise.all(preloadTasks);
+        if (myGen !== loadGeneration) return null;
 
-        if (sharedAudioCtx) {
-            await Promise.all(Array.from(slotPools.keys()).map((id) => ensureDecodedSlot(sharedAudioCtx, id)));
+        if (nextSlotPools.size === 0) {
+            throw new Error('没有任何可用的语音文件');
         }
 
-        loadedCharLabel = (data.meta && (data.meta.name || data.meta.id)) || jsonUrl.split('/').pop();
-        console.log(`[TenhouRandomSE] 已加载角色「${loadedCharLabel}」，共 ${slotPools.size} 个槽位、${urlAssetCache.size} 条语音`);
-        if (uiStatusUpdater) uiStatusUpdater();
+        // 若 AudioContext 已就绪，则在热替换前完成全部新音频的 WebAudio 解码
+        const nextDecodedPools = new Map();
+        const ctx = sharedAudioCtx;
+        if (ctx) {
+            await Promise.all(
+                Array.from(nextSlotPools.entries()).map(async ([slotId, pool]) => {
+                    const decodedList = await decodeSlotList(ctx, slotId, pool);
+                    if (decodedList.length > 0) {
+                        nextDecodedPools.set(slotId, decodedList);
+                    }
+                })
+            );
+            if (myGen !== loadGeneration) return null;
+        }
 
-        return JSON.stringify({ ver: data.ver || 1.0, se: rewrittenSe });
+        const label = (data.meta && (data.meta.name || data.meta.id)) || jsonUrl.split('/').pop();
+        return {
+            pack: {
+                label,
+                url: jsonUrl,
+                slotPools: nextSlotPools,
+                decodedPools: nextDecodedPools,
+                decodedCtx: ctx || null,
+                decodingSlots: new Set(),
+            },
+            rewrittenText: JSON.stringify({ ver: data.ver || 1.0, se: rewrittenSe }),
+        };
     }
 
     async function loadFromUrl(jsonUrl) {
-        if (!jsonUrl || !isEnabled()) {
-            slotPools.clear();
-            decodedPools.clear();
-            loadedCharLabel = '已禁用（使用原生 SE）';
-            if (uiStatusUpdater) uiStatusUpdater();
+        const myGen = ++loadGeneration;
+        if (!isEnabled()) {
+            if (uiStatusUpdater) uiStatusUpdater('已禁用（使用原生 SE）');
+            return;
+        }
+        if (!jsonUrl) {
+            if (uiStatusUpdater) uiStatusUpdater('未配置 JSON 链接');
             return;
         }
         try {
             const res = await smartRequest(jsonUrl, 'text');
-            await processCustomSeJson(jsonUrl, res.responseText);
-        } catch (err) {
-            loadedCharLabel = '加载失败，请检查链接';
-            console.error('[TenhouRandomSE] 加载 se.json 失败:', jsonUrl, err);
+            if (myGen !== loadGeneration) return;
+            const built = await buildPackFromSeJson(jsonUrl, res.responseText, myGen);
+            if (!built || myGen !== loadGeneration) return;
+
+            // 原子热替换：立即对下一声游戏音效生效，无需刷新页面
+            activePack = built.pack;
+            console.log(`[TenhouRandomSE] 已热替换角色「${activePack.label}」，共 ${activePack.slotPools.size} 个槽位（已解码 ${activePack.decodedPools.size} 个）`);
             if (uiStatusUpdater) uiStatusUpdater();
+        } catch (err) {
+            if (myGen !== loadGeneration) return;
+            console.error('[TenhouRandomSE] 加载 se.json 失败（保留当前可用语音）:', jsonUrl, err);
+            if (uiStatusUpdater) uiStatusUpdater(`加载失败（保留当前）：${err.message || '请检查链接'}`);
         }
     }
 
-    async function ensureDecodedSlot(ctx, slotId) {
-        if (!ctx || !OrigAudioContextProto) return;
-        const pool = slotPools.get(slotId);
-        if (!pool || !pool.length || decodedPools.has(slotId)) return;
-        decodedPools.set(slotId, []);
-        const origDecode = OrigAudioContextProto.decodeAudioData;
-        const decodedList = [];
-        for (const item of pool) {
-            try {
-                const decoded = await origDecode.call(ctx, item.arrayBuffer.slice(0));
-                audioBufToSlot.set(decoded, slotId);
-                decodedList.push(decoded);
-            } catch (e) {
-                console.warn('[TenhouRandomSE] WebAudio 解码失败:', slotId, item.url, e);
-            }
-        }
-        if (decodedList.length > 0) {
-            decodedPools.set(slotId, decodedList);
-        } else {
-            decodedPools.delete(slotId);
-        }
-    }
-
-    // 页面启动即开始后台预加载当前配置的 se.json（/4/ 必需；/3/ 也会提前缓存好）
+    // 页面启动即开始后台预加载当前配置的 se.json
     const initialPreloadPromise = loadFromUrl(getSavedUrl());
 
     // ==========================================
-    // Hook fetch & XMLHttpRequest (用于 /3/ 的 se.json 拦截)
+    // Hook fetch & XMLHttpRequest.prototype (保留原生原型与实例语义)
     // ==========================================
     function isCandidateSeJsonUrl(url) {
         if (typeof url !== 'string') return false;
@@ -337,7 +452,7 @@
         const slotId = parseSlotFromVirtualUrl(url);
         if (slotId) {
             await initialPreloadPromise;
-            const pool = slotPools.get(slotId);
+            const pool = activePack.slotPools.get(slotId);
             if (pool && pool.length) {
                 const cloneBuf = pool[0].arrayBuffer.slice(0);
                 arrayBufToSlot.set(cloneBuf, slotId);
@@ -354,8 +469,13 @@
         if (!IS_V4 && isEnabled() && isCandidateSeJsonUrl(url)) {
             try {
                 const res = await smartRequest(url, 'text');
-                const rewritten = await processCustomSeJson(url, res.responseText);
-                return new Response(rewritten, { status: 200, headers: { 'Content-Type': 'application/json' } });
+                const myGen = ++loadGeneration;
+                const built = await buildPackFromSeJson(url, res.responseText, myGen);
+                if (built && myGen === loadGeneration) {
+                    activePack = built.pack;
+                    if (uiStatusUpdater) uiStatusUpdater();
+                    return new Response(built.rewrittenText, { status: 200, headers: { 'Content-Type': 'application/json' } });
+                }
             } catch (e) {
                 console.warn('[TenhouRandomSE] fetch 拦截 se.json 失败，回退原生:', url, e);
             }
@@ -363,71 +483,101 @@
         return origFetch(input, init);
     };
 
-    const OrigXHR = win.XMLHttpRequest;
-    win.XMLHttpRequest = function () {
-        const xhr = new OrigXHR();
-        let reqUrl = '';
-        const origOpen = xhr.open;
-        const origSend = xhr.send;
+    const OrigXHRProto = win.XMLHttpRequest && win.XMLHttpRequest.prototype;
+    if (OrigXHRProto) {
+        const xhrUrlMap = new WeakMap();
+        const xhrBoundMap = new WeakSet();
+        const origXhrOpen = OrigXHRProto.open;
+        const origXhrSend = OrigXHRProto.send;
 
-        xhr.open = function (method, url, ...rest) {
-            reqUrl = String(url || '');
-            return origOpen.call(this, method, url, ...rest);
+        OrigXHRProto.open = function (method, url, ...rest) {
+            xhrUrlMap.set(this, String(url || ''));
+            if (IS_V4 && !xhrBoundMap.has(this)) {
+                xhrBoundMap.add(this);
+                pendingV4Xhrs.add(this);
+                this.addEventListener('readystatechange', () => {
+                    if (this.readyState === 4) {
+                        pendingV4Xhrs.delete(this);
+                        if (this.status === 200 && this.response instanceof ArrayBuffer) {
+                            tryIndexTenhouV4Pack(this.response);
+                        }
+                    }
+                });
+            }
+            return origXhrOpen.call(this, method, url, ...rest);
         };
 
-        xhr.send = function (body) {
+        OrigXHRProto.send = function (body) {
+            const reqUrl = xhrUrlMap.get(this) || '';
             const slotId = parseSlotFromVirtualUrl(reqUrl);
             if (slotId) {
                 initialPreloadPromise.then(() => {
-                    const pool = slotPools.get(slotId);
+                    const pool = activePack.slotPools.get(slotId);
                     const buf = pool && pool.length ? pool[0].arrayBuffer.slice(0) : new ArrayBuffer(0);
                     arrayBufToSlot.set(buf, slotId);
-                    Object.defineProperties(xhr, {
-                        readyState: { get: () => 4 },
-                        status: { get: () => 200 },
-                        statusText: { get: () => 'OK' },
-                        response: { get: () => buf },
+                    Object.defineProperties(this, {
+                        readyState: { configurable: true, get: () => 4 },
+                        status: { configurable: true, get: () => 200 },
+                        statusText: { configurable: true, get: () => 'OK' },
+                        response: { configurable: true, get: () => buf },
                     });
-                    xhr.dispatchEvent(new Event('readystatechange'));
-                    xhr.dispatchEvent(new Event('load'));
+                    this.dispatchEvent(new Event('readystatechange'));
+                    this.dispatchEvent(new Event('load'));
                 });
                 return;
             }
             if (!IS_V4 && isEnabled() && isCandidateSeJsonUrl(reqUrl)) {
                 smartRequest(reqUrl, 'text')
-                    .then((res) => processCustomSeJson(reqUrl, res.responseText))
-                    .then((rewritten) => {
-                        Object.defineProperties(xhr, {
-                            readyState: { get: () => 4 },
-                            status: { get: () => 200 },
-                            statusText: { get: () => 'OK' },
-                            responseText: { get: () => rewritten },
-                            response: { get: () => rewritten },
+                    .then((res) => buildPackFromSeJson(reqUrl, res.responseText, ++loadGeneration))
+                    .then((built) => {
+                        if (!built) return origXhrSend.call(this, body);
+                        activePack = built.pack;
+                        if (uiStatusUpdater) uiStatusUpdater();
+                        Object.defineProperties(this, {
+                            readyState: { configurable: true, get: () => 4 },
+                            status: { configurable: true, get: () => 200 },
+                            statusText: { configurable: true, get: () => 'OK' },
+                            responseText: { configurable: true, get: () => built.rewrittenText },
+                            response: { configurable: true, get: () => built.rewrittenText },
                         });
-                        xhr.dispatchEvent(new Event('readystatechange'));
-                        xhr.dispatchEvent(new Event('load'));
+                        this.dispatchEvent(new Event('readystatechange'));
+                        this.dispatchEvent(new Event('load'));
                     })
-                    .catch(() => origSend.call(xhr, body));
+                    .catch(() => origXhrSend.call(this, body));
                 return;
             }
-            return origSend.call(xhr, body);
+            return origXhrSend.call(this, body);
         };
-        return xhr;
-    };
+    }
 
     // ==========================================
-    // Hook Web Audio API (兼容 /3/ 与 /4/ 核心引擎)
+    // Hook Web Audio API (兼容 /3/ 与 /4/ 原生播放管线，实时热替换)
     // ==========================================
     if (OrigAudioContextProto) {
+        const origCreateGain = OrigAudioContextProto.createGain || OrigAudioContextProto.createGainNode;
+        if (origCreateGain) {
+            const hookGain = function (...args) {
+                sharedAudioCtx = this;
+                const gn = origCreateGain.apply(this, args);
+                lastGainNode = gn;
+                return gn;
+            };
+            if (OrigAudioContextProto.createGain) OrigAudioContextProto.createGain = hookGain;
+            if (OrigAudioContextProto.createGainNode) OrigAudioContextProto.createGainNode = hookGain;
+        }
+
         const origDecode = OrigAudioContextProto.decodeAudioData;
         OrigAudioContextProto.decodeAudioData = function (audioData, successCb, errorCb) {
             sharedAudioCtx = this;
+            if (activePack.slotPools.size > 0 && activePack.decodedCtx !== this) {
+                ensurePackDecoded(this, activePack);
+            }
+
             let slotId = arrayBufToSlot.get(audioData);
-
-// /4/ 使用下方 win.N 直接拦截，不再依赖 decodeAudioData 序号猜测
-
-            if (slotId) {
-                initialPreloadPromise.then(() => ensureDecodedSlot(this, slotId));
+            if (!slotId && IS_V4 && audioData instanceof ArrayBuffer) {
+                if (v4FingerprintToSlot.size === 0) ensureV4XhrsIndexed();
+                const fp = fingerprintBytes(new Uint8Array(audioData), 0, audioData.byteLength);
+                slotId = v4FingerprintToSlot.get(fp);
             }
 
             if (typeof successCb === 'function') {
@@ -462,13 +612,19 @@
                 get: bufDesc.get,
                 set(val) {
                     try {
-                        if (isEnabled()) {
-                            const slotId = val && audioBufToSlot.get(val);
-                            const pool = slotId && decodedPools.get(slotId);
-                            if (pool && pool.length > 0) {
-                                const idx = pickRandomIndex(slotId, pool.length);
-                                val = pool[idx];
-                                console.log(`[TenhouRandomSE] WebAudio 替换 slot[${slotId}] -> #${idx + 1}`);
+                        if (isEnabled() && val) {
+                            const slotId = audioBufToSlot.get(val);
+                            if (slotId) {
+                                const pack = activePack;
+                                const pool = pack.decodedPools.get(slotId);
+                                if (pool && pool.length > 0) {
+                                    const idx = pickRandomIndex(slotId, pool.length);
+                                    val = pool[idx];
+                                    console.log(`[TenhouRandomSE] WebAudio 热替换 slot[${slotId}] -> #${idx + 1} (${pack.label})`);
+                                } else if (pack.slotPools.has(slotId) && (this.context || sharedAudioCtx)) {
+                                    // 尚未解码完成时异步补解并回退原生音效，绝不静音
+                                    ensureSlotDecoded(this.context || sharedAudioCtx, pack, slotId);
+                                }
                             }
                         }
                     } catch (e) {
@@ -486,7 +642,7 @@
         if (slotId) {
             const audio = new OrigAudio();
             audioElemToSlot.set(audio, slotId);
-            const pool = slotPools.get(slotId);
+            const pool = activePack.slotPools.get(slotId);
             if (pool && pool.length) {
                 audio.src = pool[pickRandomIndex(slotId, pool.length)].blobUrl;
             }
@@ -504,11 +660,14 @@
                 const slotId = audioElemToSlot.get(this) || parseSlotFromVirtualUrl(curSrc) || blobUrlToSlot.get(curSrc);
                 if (slotId) {
                     audioElemToSlot.set(this, slotId);
-                    const pool = slotPools.get(slotId);
-                    if (pool && pool.length > 1) {
+                    const pool = activePack.slotPools.get(slotId);
+                    if (pool && pool.length > 0) {
                         const idx = pickRandomIndex(slotId, pool.length);
-                        this.src = pool[idx].blobUrl;
-                        this.load();
+                        const nextUrl = pool[idx].blobUrl;
+                        if (this.src !== nextUrl) {
+                            this.src = nextUrl;
+                            this.load();
+                        }
                     }
                 }
             }
@@ -519,7 +678,7 @@
     };
 
     // ==========================================
-    // 悬浮 GUI 设置窗口（支持 /4/ 与 /3/）
+    // 悬浮 GUI 设置窗口（支持 /4/ 与 /3/，实时热切换）
     // ==========================================
     function mountGui() {
         if (document.getElementById('tenhou-se-gui-root')) return;
@@ -547,7 +706,7 @@
                 </label>
             </div>
 
-            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">已保存配置（选择即切换）</div>
+            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">已保存配置（选择即实时热切换）</div>
             <div style="display:flex;gap:6px;margin-bottom:10px;">
                 <select id="th-se-preset" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
                 <button id="th-se-del" title="删除当前配置" style="background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:12px;">删除</button>
@@ -561,7 +720,7 @@
                 style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:10px;font-size:12px;outline:none;" />
 
             <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <button id="th-se-save" style="flex:1;background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;box-shadow:0 2px 6px rgba(37,99,235,.28);">保存并应用</button>
+                <button id="th-se-save" style="flex:1;background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;box-shadow:0 2px 6px rgba(37,99,235,.28);">保存并热替换</button>
                 <button id="th-se-apply" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;">仅临时加载</button>
             </div>
 
@@ -611,8 +770,14 @@
 
         renderPresets();
 
-        uiStatusUpdater = () => {
-            statusEl.textContent = `状态：${loadedCharLabel}（${slotPools.size} 槽位）`;
+        uiStatusUpdater = (customMsg) => {
+            if (customMsg) {
+                statusEl.textContent = `状态：${customMsg}`;
+            } else if (!isEnabled()) {
+                statusEl.textContent = '状态：已禁用（使用原生 SE）';
+            } else {
+                statusEl.textContent = `状态：${activePack.label}（${activePack.slotPools.size} 槽位 / ${activePack.decodedPools.size} 已解码）`;
+            }
         };
         uiStatusUpdater();
 
@@ -630,7 +795,7 @@
             urlInput.value = picked.url;
             setEnabled(true);
             enableChk.checked = true;
-            statusEl.textContent = `正在切换至「${picked.name}」...`;
+            uiStatusUpdater(`正在后台加载「${picked.name}」...`);
             await loadFromUrl(picked.url);
         });
 
@@ -655,7 +820,7 @@
             renderPresets();
             setEnabled(true);
             enableChk.checked = true;
-            statusEl.textContent = `已保存并加载「${n}」...`;
+            uiStatusUpdater(`已保存，正在热替换「${n}」...`);
             await loadFromUrl(u);
         });
 
@@ -670,21 +835,29 @@
             setActivePresetId(presets[0].id);
             setSavedUrl(presets[0].url);
             renderPresets();
-            statusEl.textContent = `已切换至「${presets[0].name}」...`;
+            uiStatusUpdater(`已切换至「${presets[0].name}」...`);
             await loadFromUrl(presets[0].url);
         });
 
         enableChk.addEventListener('change', async () => {
             setEnabled(enableChk.checked);
-            await loadFromUrl(urlInput.value.trim());
+            if (!enableChk.checked) {
+                uiStatusUpdater('已禁用（使用原生 SE）');
+            } else if (activePack.url === urlInput.value.trim() && activePack.slotPools.size > 0) {
+                uiStatusUpdater();
+            } else {
+                uiStatusUpdater('正在加载...');
+                await loadFromUrl(urlInput.value.trim());
+            }
         });
 
         panel.querySelector('#th-se-apply').addEventListener('click', async () => {
             const u = urlInput.value.trim();
+            if (!u) return;
             setSavedUrl(u);
             setEnabled(true);
             enableChk.checked = true;
-            statusEl.textContent = '正在加载并预解码...';
+            uiStatusUpdater('正在加载并预解码...');
             await loadFromUrl(u);
         });
 
@@ -701,132 +874,44 @@
         mountGui();
     }
 
-    // ==========================================
-    // tenhou.net/4 专用：在 /4/latest.js 加载时注入 N(c,m,b) 拦截器（因为 latest.js 在 IIFE 内部）
-    // ==========================================
-    if (IS_V4) {
-        let v4GainNode = null;
-
-        win.__tenhouV4_onN = function (id, arg, delayMs, gainNode) {
-            if (gainNode) v4GainNode = gainNode;
-            if (!isEnabled()) return false;
-            const slotId = V4_ID_TO_SLOT[id];
-            if (!slotId) return false;
-
-            const dPool = decodedPools.get(slotId);
-            const rPool = slotPools.get(slotId);
-            if ((!dPool || dPool.length === 0) && (!rPool || rPool.length === 0)) {
-                return false; // 尚未就绪时回退原生音效，绝不静音
-            }
-
-            const playCustom = () => {
-                if (sharedAudioCtx && dPool && dPool.length > 0) {
-                    try {
-                        const idx = pickRandomIndex(slotId, dPool.length);
-                        const bs = sharedAudioCtx.createBufferSource();
-                        bs.buffer = dPool[idx];
-                        bs.connect(v4GainNode || sharedAudioCtx.destination);
-                        const when = delayMs && delayMs > 0 ? sharedAudioCtx.currentTime + delayMs / 1000 : 0;
-                        bs.start(when);
-                        console.log(`[TenhouRandomSE] /4/ WebAudio 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
-                        return;
-                    } catch (e) {
-                        console.warn('[TenhouRandomSE] /4/ WebAudio 播放失败，回退 Audio:', e);
-                    }
-                }
-                if (rPool && rPool.length > 0) {
-                    const idx = pickRandomIndex(slotId, rPool.length);
-                    const a = new OrigAudio(rPool[idx].blobUrl);
-                    if (v4GainNode && v4GainNode.gain) a.volume = Math.max(0, Math.min(1, v4GainNode.gain.value));
-                    const run = () => a.play().catch(() => {});
-                    if (delayMs && delayMs > 0) setTimeout(run, delayMs);
-                    else run();
-                    console.log(`[TenhouRandomSE] /4/ Audio 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
-                }
-            };
-
-            if (sharedAudioCtx && dPool && dPool.length > 0) {
-                playCustom();
-            } else if (delayMs && delayMs > 0) {
-                setTimeout(playCustom, delayMs);
-            } else {
-                playCustom();
-            }
-
-            // 组合音效保留天凤原生拍牌/特效声（113=鸣牌拍桌, 114=和牌重音）
-            if (typeof win.__tenhouV4_origN === 'function') {
-                if (id >= 1010 && id <= 1018) win.__tenhouV4_origN(113, arg, delayMs);
-                else if (id >= 1022 && id <= 1027) win.__tenhouV4_origN(114, arg, delayMs);
-            }
-            return true;
-        };
-
-        const origAppendChild = win.Node.prototype.appendChild;
-        win.Node.prototype.appendChild = function (node) {
-            if (
-                node &&
-                node.tagName === 'SCRIPT' &&
-                typeof node.src === 'string' &&
-                /\/4\/latest\.js(\?.*)?$/i.test(node.src) &&
-                !node.__tenhouPatched
-            ) {
-                const targetSrc = node.src;
-                const onloadCb = node.onload;
-                origFetch(targetSrc)
-                    .then((r) => r.text())
-                    .then((code) => {
-                        const needle = 'N=function(c,m,b){';
-                        if (!code.includes(needle)) {
-                            console.warn('[TenhouRandomSE] 未找到 /4/latest.js 注入点，回退原脚本');
-                            node.__tenhouPatched = true;
-                            origAppendChild.call(this, node);
-                            return;
-                        }
-                        const patched = code.replace(
-                            needle,
-                            'N=window.__tenhouV4_origN=function(c,m,b){if(window.__tenhouV4_onN&&window.__tenhouV4_onN(c,m,b,d))return;'
-                        );
-                        const inlineScript = document.createElement('script');
-                        inlineScript.__tenhouPatched = true;
-                        inlineScript.textContent = patched;
-                        origAppendChild.call(this, inlineScript);
-                        console.log('[TenhouRandomSE] 已成功注入 tenhou.net/4/latest.js 音效拦截器');
-                        if (typeof onloadCb === 'function') onloadCb.call(inlineScript);
-                    })
-                    .catch((err) => {
-                        console.warn('[TenhouRandomSE] 拉取 /4/latest.js 失败，回退原脚本:', err);
-                        node.__tenhouPatched = true;
-                        origAppendChild.call(this, node);
-                    });
-                return node;
-            }
-            return origAppendChild.call(this, node);
-        };
-    }
-
     win.__tenhouRandomSE = {
         status() {
             const out = {};
-            for (const [slotId, pool] of slotPools.entries()) {
+            for (const [slotId, pool] of activePack.slotPools.entries()) {
                 out[slotId] = {
                     variants: pool.length,
-                    decoded: (decodedPools.get(slotId) || []).length,
+                    decoded: (activePack.decodedPools.get(slotId) || []).length,
                     files: pool.map((x) => x.url.split('/').pop()),
                 };
             }
+            console.log(`[TenhouRandomSE] 当前角色: ${activePack.label}, 启用: ${isEnabled()}, /4/ 索引数: ${v4FingerprintToSlot.size}`);
             console.table(out);
             return out;
         },
         async test(slotId = '27') {
-            const pool = slotPools.get(String(slotId));
-            if (!pool || !pool.length) {
-                console.warn('[TenhouRandomSE] 未找到槽位:', slotId);
+            const key = String(slotId);
+            const dPool = activePack.decodedPools.get(key);
+            if (sharedAudioCtx && dPool && dPool.length > 0) {
+                if (sharedAudioCtx.state === 'suspended') {
+                    await sharedAudioCtx.resume().catch(() => {});
+                }
+                const idx = pickRandomIndex(key, dPool.length);
+                const bs = sharedAudioCtx.createBufferSource();
+                bs.buffer = dPool[idx];
+                bs.connect(lastGainNode || sharedAudioCtx.destination);
+                bs.start(0);
+                console.log(`[TenhouRandomSE] 试听(WebAudio) slot[${key}] -> #${idx + 1} (${activePack.label})`);
                 return;
             }
-            const idx = pickRandomIndex(String(slotId), pool.length);
+            const pool = activePack.slotPools.get(key);
+            if (!pool || !pool.length) {
+                console.warn('[TenhouRandomSE] 未找到槽位:', key);
+                return;
+            }
+            const idx = pickRandomIndex(key, pool.length);
             const a = new OrigAudio(pool[idx].blobUrl);
             await a.play();
-            console.log(`[TenhouRandomSE] 试听 slot[${slotId}] -> #${idx + 1} (${pool[idx].url})`);
+            console.log(`[TenhouRandomSE] 试听(Audio) slot[${key}] -> #${idx + 1} (${pool[idx].url})`);
         },
     };
 })();
