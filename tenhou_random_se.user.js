@@ -8,6 +8,8 @@
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
+// @connect      se.nivalis.is
+// @connect      *.nivalis.is
 // @connect      127.0.0.1
 // @connect      localhost
 // @connect      *
@@ -46,7 +48,20 @@
         return idx;
     }
 
-    function gmRequest(url, responseType) {
+    async function smartRequest(url, responseType) {
+        // 优先走原生 fetch（se.nivalis.is 已配置 Access-Control-Allow-Origin: *，不会触发油猴跨域弹窗）
+        if (url.startsWith('https://')) {
+            try {
+                const res = await origFetch(url, { mode: 'cors' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (responseType === 'arraybuffer') {
+                    return { response: await res.arrayBuffer() };
+                }
+                return { responseText: await res.text() };
+            } catch {
+                // 若目标站点未开 CORS，再回退到 GM_xmlhttpRequest
+            }
+        }
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'GET',
@@ -66,7 +81,7 @@
 
     function loadAudioAsset(resolvedUrl) {
         if (urlAssetCache.has(resolvedUrl)) return urlAssetCache.get(resolvedUrl);
-        const p = gmRequest(resolvedUrl, 'arraybuffer').then((res) => {
+        const p = smartRequest(resolvedUrl, 'arraybuffer').then((res) => {
             const arrayBuffer = res.response;
             const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
             const blobUrl = URL.createObjectURL(blob);
@@ -204,7 +219,7 @@
         }
         if (isCandidateSeJsonUrl(url)) {
             try {
-                const res = await gmRequest(url, 'text');
+                const res = await smartRequest(url, 'text');
                 const rewritten = await processCustomSeJson(url, res.responseText);
                 return new Response(rewritten, {
                     status: 200,
@@ -248,7 +263,7 @@
                 return;
             }
             if (isCandidateSeJsonUrl(reqUrl)) {
-                gmRequest(reqUrl, 'text')
+                smartRequest(reqUrl, 'text')
                     .then((res) => processCustomSeJson(reqUrl, res.responseText))
                     .then((rewritten) => {
                         Object.defineProperties(xhr, {
