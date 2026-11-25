@@ -217,8 +217,7 @@
             return rawText;
         }
 
-        slotPools.clear();
-        decodedPools.clear();
+// 等全部新资源预加载完成后再原子替换，避免加载期间无声
 
         const baseForRel = (data.meta && data.meta.base)
             ? resolveAudioUrl(data.meta.base, jsonUrl)
@@ -703,42 +702,106 @@
     }
 
     // ==========================================
-    // tenhou.net/4 专用：直接 Hook 全局播放函数 window.N(id, arg, delayMs)
+    // tenhou.net/4 专用：在 /4/latest.js 加载时注入 N(c,m,b) 拦截器（因为 latest.js 在 IIFE 内部）
     // ==========================================
     if (IS_V4) {
-        const v4HookTimer = setInterval(() => {
-            if (typeof win.N === 'function' && !win.N.__tenhouHooked && win.N.toString().length > 30) {
-                const origN = win.N;
-                const wrappedN = function (id, arg, delayMs) {
-                    const slotId = V4_ID_TO_SLOT[id];
-                    if (isEnabled() && slotId) {
-                        const pool = slotPools.get(slotId);
-                        if (pool && pool.length > 0) {
-                            const idx = pickRandomIndex(slotId, pool.length);
-                            const playIt = () => {
-                                const a = new OrigAudio(pool[idx].blobUrl);
-                                a.play().catch((err) => console.warn('[TenhouRandomSE] /4/ 播放失败:', err));
-                            };
-                            if (delayMs && delayMs > 0) {
-                                setTimeout(playIt, delayMs);
-                            } else {
-                                playIt();
-                            }
-                            // 组合音效保留天凤原生拍牌/特效声（113=鸣牌拍桌, 114=立直/和牌重音, 145=立直棒）
-                            if (id >= 1010 && id <= 1018) origN.call(this, 113, arg, delayMs);
-                            else if (id >= 1022 && id <= 1027) origN.call(this, 114, arg, delayMs);
-                            console.log(`[TenhouRandomSE] /4/ 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
+        let v4GainNode = null;
+
+        win.__tenhouV4_onN = function (id, arg, delayMs, gainNode) {
+            if (gainNode) v4GainNode = gainNode;
+            if (!isEnabled()) return false;
+            const slotId = V4_ID_TO_SLOT[id];
+            if (!slotId) return false;
+
+            const dPool = decodedPools.get(slotId);
+            const rPool = slotPools.get(slotId);
+            if ((!dPool || dPool.length === 0) && (!rPool || rPool.length === 0)) {
+                return false; // 尚未就绪时回退原生音效，绝不静音
+            }
+
+            const playCustom = () => {
+                if (sharedAudioCtx && dPool && dPool.length > 0) {
+                    try {
+                        const idx = pickRandomIndex(slotId, dPool.length);
+                        const bs = sharedAudioCtx.createBufferSource();
+                        bs.buffer = dPool[idx];
+                        bs.connect(v4GainNode || sharedAudioCtx.destination);
+                        const when = delayMs && delayMs > 0 ? sharedAudioCtx.currentTime + delayMs / 1000 : 0;
+                        bs.start(when);
+                        console.log(`[TenhouRandomSE] /4/ WebAudio 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
+                        return;
+                    } catch (e) {
+                        console.warn('[TenhouRandomSE] /4/ WebAudio 播放失败，回退 Audio:', e);
+                    }
+                }
+                if (rPool && rPool.length > 0) {
+                    const idx = pickRandomIndex(slotId, rPool.length);
+                    const a = new OrigAudio(rPool[idx].blobUrl);
+                    if (v4GainNode && v4GainNode.gain) a.volume = Math.max(0, Math.min(1, v4GainNode.gain.value));
+                    const run = () => a.play().catch(() => {});
+                    if (delayMs && delayMs > 0) setTimeout(run, delayMs);
+                    else run();
+                    console.log(`[TenhouRandomSE] /4/ Audio 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
+                }
+            };
+
+            if (sharedAudioCtx && dPool && dPool.length > 0) {
+                playCustom();
+            } else if (delayMs && delayMs > 0) {
+                setTimeout(playCustom, delayMs);
+            } else {
+                playCustom();
+            }
+
+            // 组合音效保留天凤原生拍牌/特效声（113=鸣牌拍桌, 114=和牌重音）
+            if (typeof win.__tenhouV4_origN === 'function') {
+                if (id >= 1010 && id <= 1018) win.__tenhouV4_origN(113, arg, delayMs);
+                else if (id >= 1022 && id <= 1027) win.__tenhouV4_origN(114, arg, delayMs);
+            }
+            return true;
+        };
+
+        const origAppendChild = win.Node.prototype.appendChild;
+        win.Node.prototype.appendChild = function (node) {
+            if (
+                node &&
+                node.tagName === 'SCRIPT' &&
+                typeof node.src === 'string' &&
+                /\/4\/latest\.js(\?.*)?$/i.test(node.src) &&
+                !node.__tenhouPatched
+            ) {
+                const targetSrc = node.src;
+                const onloadCb = node.onload;
+                origFetch(targetSrc)
+                    .then((r) => r.text())
+                    .then((code) => {
+                        const needle = 'N=function(c,m,b){';
+                        if (!code.includes(needle)) {
+                            console.warn('[TenhouRandomSE] 未找到 /4/latest.js 注入点，回退原脚本');
+                            node.__tenhouPatched = true;
+                            origAppendChild.call(this, node);
                             return;
                         }
-                    }
-                    return origN.apply(this, arguments);
-                };
-                wrappedN.__tenhouHooked = true;
-                win.N = wrappedN;
-                clearInterval(v4HookTimer);
-                console.log('[TenhouRandomSE] 已成功挂载 tenhou.net/4 音效拦截器 (window.N)');
+                        const patched = code.replace(
+                            needle,
+                            'N=window.__tenhouV4_origN=function(c,m,b){if(window.__tenhouV4_onN&&window.__tenhouV4_onN(c,m,b,d))return;'
+                        );
+                        const inlineScript = document.createElement('script');
+                        inlineScript.__tenhouPatched = true;
+                        inlineScript.textContent = patched;
+                        origAppendChild.call(this, inlineScript);
+                        console.log('[TenhouRandomSE] 已成功注入 tenhou.net/4/latest.js 音效拦截器');
+                        if (typeof onloadCb === 'function') onloadCb.call(inlineScript);
+                    })
+                    .catch((err) => {
+                        console.warn('[TenhouRandomSE] 拉取 /4/latest.js 失败，回退原脚本:', err);
+                        node.__tenhouPatched = true;
+                        origAppendChild.call(this, node);
+                    });
+                return node;
             }
-        }, 100);
+            return origAppendChild.call(this, node);
+        };
     }
 
     win.__tenhouRandomSE = {
