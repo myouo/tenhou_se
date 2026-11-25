@@ -1,17 +1,21 @@
 # tenhou_se
 
-天凤（Tenhou）自定义角色语音（SE）静态托管仓库，部署于 Cloudflare Pages（`https://se.nivalis.is`）。
+天凤（Tenhou）自定义角色语音（SE）静态托管仓库，部署于 Cloudflare Workers + Static Assets（`https://se.nivalis.is`）。
 
 ## 目录结构
 
 ```text
 tenhou_se/
-├── _headers                  # Cloudflare Pages CORS 跨域响应头配置
-├── _redirects                # 将 /<角色>.json 静态重写到 /json/<角色>.json
-├── tenhou_random_se.user.js  # 天凤通用多语音随机油猴脚本（支持局内零延迟随机）
-├── json/                     # 各角色 SE 配置文件目录
-│   └── kazusa.json           # 冬马和纱配置（对外访问：https://se.nivalis.is/kazusa.json）
-└── kazusa/                   # 冬马和纱全部 .mp3 语音文件
+├── .github/workflows/deploy.yml  # GitHub Actions 自动部署到 Cloudflare Workers
+├── src/index.ts                  # Worker 入口：将 /<角色>.json 重写到 /json/<角色>.json 并添加 CORS 头
+├── wrangler.jsonc                # Workers 与静态资源配置（绑定 se.nivalis.is）
+├── tenhou_random_se.user.js      # 天凤通用多语音随机油猴脚本（支持局内零延迟随机）
+└── public/
+    ├── _headers                  # 静态资源 CORS 响应头配置
+    ├── json/                     # 各角色 SE 配置文件目录
+    │   └── kazusa.json           # 冬马和纱配置（对外访问：https://se.nivalis.is/kazusa.json）
+    └── character/                # 各角色语音资源目录
+        └── kazusa/               # 冬马和纱全部 .mp3 语音文件
 ```
 
 ## 已有角色
@@ -29,6 +33,6 @@ tenhou_se/
 
 ## 新增角色规范
 
-1. 新建 `<角色id>/` 目录放入 `.mp3` 语音文件；
-2. 在 `json/<角色id>.json` 中按 `kazusa.json` 格式编写配置（同时填写 `"url"` 与 `"urls"`，链接前缀为 `https://se.nivalis.is/<角色id>/`）；
-3. 在 `_redirects` 中追加一行 `/<角色id>.json /json/<角色id>.json 200` 即可通过 `https://se.nivalis.is/<角色id>.json` 访问。
+1. 在 `public/character/<角色id>/` 下放入 `.mp3` 语音文件；
+2. 在 `public/json/<角色id>.json` 中按 `kazusa.json` 格式编写配置（同时填写 `"url"` 与 `"urls"`，链接前缀为 `https://se.nivalis.is/character/<角色id>/`）；
+3. 推送到 `main` 分支后 CI 会自动部署，即可通过 `https://se.nivalis.is/<角色id>.json` 访问。
