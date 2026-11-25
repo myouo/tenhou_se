@@ -498,33 +498,37 @@
 
         const root = document.createElement('div');
         root.id = 'tenhou-se-gui-root';
-        root.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:2147483647;font-family:system-ui,-apple-system,sans-serif;font-size:13px;';
+        root.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;font-size:13px;line-height:1.4;';
 
         const toggleBtn = document.createElement('button');
         toggleBtn.textContent = '🎵 自定义 SE';
-        toggleBtn.style.cssText = 'background:#1e293b;color:#f8fafc;border:1px solid #475569;border-radius:999px;padding:6px 12px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.45);font-weight:600;';
+        toggleBtn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#ffffff;color:#0f172a;border:1px solid #cbd5e1;border-radius:999px;padding:8px 14px;cursor:pointer;box-shadow:0 6px 20px rgba(15,23,42,.16),0 1px 3px rgba(15,23,42,.08);font-weight:600;font-size:13px;letter-spacing:.2px;';
 
         const panel = document.createElement('div');
-        panel.style.cssText = 'display:none;width:320px;background:rgba(15,23,42,.95);color:#e2e8f0;border:1px solid #334155;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 10px 28px rgba(0,0,0,.6);backdrop-filter:blur(6px);';
+        panel.style.cssText = 'display:none;width:336px;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
 
         panel.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <strong style="font-size:14px;">天凤 SE 替换 (${IS_V4 ? '/4/ 4K版' : '/3/ 网页版'})</strong>
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
-                    <input id="th-se-enable" type="checkbox" ${isEnabled() ? 'checked' : ''} /> 启用
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #f1f5f9;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
+                    <strong style="font-size:14px;color:#0f172a;font-weight:700;">天凤 SE 替换</strong>
+                    <span style="font-size:11px;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:1px 7px;font-weight:600;">${IS_V4 ? '/4/ 4K版' : '/3/ 网页版'}</span>
+                </div>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;color:#334155;font-weight:600;">
+                    <input id="th-se-enable" type="checkbox" ${isEnabled() ? 'checked' : ''} style="accent-color:#2563eb;cursor:pointer;" /> 启用
                 </label>
             </div>
-            <div style="margin-bottom:6px;font-size:12px;color:#94a3b8;">SE 配置 JSON 链接：</div>
+            <div style="margin-bottom:6px;font-size:12px;color:#475569;font-weight:600;">SE 配置 JSON 链接</div>
             <input id="th-se-url" type="text" value="${getSavedUrl().replace(/"/g, '&quot;')}"
                 placeholder="https://se.nivalis.is/kazusa.json"
-                style="width:100%;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:#f8fafc;margin-bottom:8px;font-size:12px;" />
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-                <button id="th-se-apply" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px;cursor:pointer;font-weight:600;">应用并加载</button>
-                <button id="th-se-reset" style="background:#334155;color:#e2e8f0;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;">默认和纱</button>
+                style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:10px;font-size:12px;outline:none;" />
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <button id="th-se-apply" style="flex:1;background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;box-shadow:0 2px 6px rgba(37,99,235,.28);">应用并加载</button>
+                <button id="th-se-reset" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;">默认和纱</button>
             </div>
-            <div id="th-se-status" style="font-size:12px;color:#38bdf8;margin-bottom:8px;word-break:break-all;"></div>
-            <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">点击试听（每次随机）：</div>
-            <div id="th-se-tests" style="display:flex;flex-wrap:wrap;gap:4px;">
+            <div id="th-se-status" style="font-size:12px;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 10px;margin-bottom:12px;word-break:break-all;font-weight:500;"></div>
+            <div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">点击试听（每次随机切换）</div>
+            <div id="th-se-tests" style="display:flex;flex-wrap:wrap;gap:6px;">
                 ${[
                     ['29', '吃'],
                     ['25', '碰'],
@@ -533,7 +537,7 @@
                     ['33', '荣'],
                     ['35', '自摸'],
                     ['9', '拔北'],
-                ].map(([id, label]) => `<button data-slot="${id}" style="background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;">${label}</button>`).join('')}
+                ].map(([id, label]) => `<button data-slot="${id}" style="background:#ffffff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.05);">${label}</button>`).join('')}
             </div>
         `;
 
