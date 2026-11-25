@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         天凤 通用多语音随机 SE (支持 tenhou.net/3 & tenhou.net/4 + GUI)
 // @namespace    https://github.com/myouo/tenhou_se
-// @version      3.2.0
+// @version      3.2.1
 // @description  同时支持 tenhou.net/3 与 tenhou.net/4！无侵入式底层 WebAudio 实时热替换，支持男女声独立配置与原声回退
 // @match        https://tenhou.net/3/*
 // @match        https://tenhou.net/4/*
@@ -83,6 +83,7 @@
     let sharedAudioCtx = null;
     let lastGainNode = null;
     let loadGeneration = 0;
+    let v4TaggedCount = 0;
     let uiStatusUpdater = null;
 
     // 原子化当前生效的语音包快照，切换时后台加载并解码完成后一次性替换，期间不断流
@@ -96,7 +97,27 @@
     };
 
     const AudioCtx = win.AudioContext || win.webkitAudioContext;
-    const OrigAudioContextProto = AudioCtx ? AudioCtx.prototype : null;
+    const OrigAudioContextProto =
+        (win.BaseAudioContext && win.BaseAudioContext.prototype) ||
+        (AudioCtx ? AudioCtx.prototype : null);
+    const origDecodeAudioData = OrigAudioContextProto ? OrigAudioContextProto.decodeAudioData : null;
+
+    function isArrayBuffer(x) {
+        return Boolean(
+            x &&
+            (x instanceof ArrayBuffer ||
+                (win.ArrayBuffer && x instanceof win.ArrayBuffer) ||
+                Object.prototype.toString.call(x) === '[object ArrayBuffer]')
+        );
+    }
+
+    function toPageArrayBuffer(ab) {
+        const PageUint8 = win.Uint8Array || Uint8Array;
+        const src = new Uint8Array(ab);
+        const dst = new PageUint8(src.byteLength);
+        dst.set(src);
+        return dst.buffer;
+    }
 
     function getSavedUrl() {
         try {
@@ -251,7 +272,7 @@
 
     // 解析 tenhou.net/4 二进制资源包 [uint32 id, int16 w, int16 h, uint32 len, payload...]
     function tryIndexTenhouV4Pack(buf) {
-        if (!(buf instanceof ArrayBuffer) || buf.byteLength < 16) return 0;
+        if (!isArrayBuffer(buf) || buf.byteLength < 16) return 0;
         const view = new DataView(buf);
         const u8 = new Uint8Array(buf);
         let pos = 4;
@@ -286,7 +307,7 @@
         for (const xhr of Array.from(pendingV4Xhrs)) {
             if (xhr.readyState === 4) {
                 pendingV4Xhrs.delete(xhr);
-                if (xhr.status === 200 && xhr.response instanceof ArrayBuffer) {
+                if (xhr.status === 200 && isArrayBuffer(xhr.response)) {
                     tryIndexTenhouV4Pack(xhr.response);
                 }
             }
@@ -298,7 +319,10 @@
     async function smartRequest(url, responseType) {
         if (url.startsWith('https://')) {
             try {
-                const res = await origFetch(url, { mode: 'cors' });
+                const res = await origFetch(url, {
+                    mode: 'cors',
+                    cache: responseType === 'text' ? 'no-cache' : 'default',
+                });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 if (responseType === 'arraybuffer') {
                     return { response: await res.arrayBuffer() };
@@ -348,13 +372,39 @@
         }
     }
 
+    function decodeRawAudioBuffer(ctx, ab) {
+        return new Promise((resolve, reject) => {
+            try {
+                const pageBuf = toPageArrayBuffer(ab);
+                let settled = false;
+                const onOk = (decoded) => {
+                    if (!settled) {
+                        settled = true;
+                        resolve(decoded);
+                    }
+                };
+                const onErr = (err) => {
+                    if (!settled) {
+                        settled = true;
+                        reject(err || new Error('decodeAudioData failed'));
+                    }
+                };
+                const ret = origDecodeAudioData.call(ctx, pageBuf, onOk, onErr);
+                if (ret && typeof ret.then === 'function') {
+                    ret.then(onOk, onErr);
+                }
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
     async function decodeSlotList(ctx, slotId, pool) {
-        if (!ctx || !OrigAudioContextProto || !pool || !pool.length) return [];
-        const origDecode = OrigAudioContextProto.decodeAudioData;
+        if (!ctx || !origDecodeAudioData || !pool || !pool.length) return [];
         const decodedList = [];
         for (const item of pool) {
             try {
-                const decoded = await origDecode.call(ctx, item.arrayBuffer.slice(0));
+                const decoded = await decodeRawAudioBuffer(ctx, item.arrayBuffer);
                 audioBufToSlot.set(decoded, slotId);
                 decodedList.push(decoded);
             } catch (e) {
@@ -664,7 +714,7 @@
                 this.addEventListener('readystatechange', () => {
                     if (this.readyState === 4) {
                         pendingV4Xhrs.delete(this);
-                        if (this.status === 200 && this.response instanceof ArrayBuffer) {
+                        if (this.status === 200 && isArrayBuffer(this.response)) {
                             tryIndexTenhouV4Pack(this.response);
                         }
                     }
@@ -732,40 +782,47 @@
             if (OrigAudioContextProto.createGainNode) OrigAudioContextProto.createGainNode = hookGain;
         }
 
-        const origDecode = OrigAudioContextProto.decodeAudioData;
-        OrigAudioContextProto.decodeAudioData = function (audioData, successCb, errorCb) {
-            sharedAudioCtx = this;
-            if (activePack.slotPools.size > 0 && activePack.decodedCtx !== this) {
-                ensurePackDecoded(this, activePack);
-            }
+        if (origDecodeAudioData) {
+            OrigAudioContextProto.decodeAudioData = function (audioData, successCb, errorCb) {
+                sharedAudioCtx = this;
+                if (activePack.slotPools.size > 0 && activePack.decodedCtx !== this) {
+                    ensurePackDecoded(this, activePack);
+                }
 
-            let slotId = arrayBufToSlot.get(audioData);
-            if (!slotId && IS_V4 && audioData instanceof ArrayBuffer) {
-                if (v4FingerprintToSlot.size === 0) ensureV4XhrsIndexed();
-                const fp = fingerprintBytes(new Uint8Array(audioData), 0, audioData.byteLength);
-                slotId = v4FingerprintToSlot.get(fp);
-            }
+                let slotId = arrayBufToSlot.get(audioData);
+                if (!slotId && IS_V4 && isArrayBuffer(audioData)) {
+                    if (v4FingerprintToSlot.size === 0) ensureV4XhrsIndexed();
+                    const fp = fingerprintBytes(new Uint8Array(audioData), 0, audioData.byteLength);
+                    slotId = v4FingerprintToSlot.get(fp);
+                }
 
-            if (typeof successCb === 'function') {
-                return origDecode.call(
-                    this,
-                    audioData,
-                    (decoded) => {
-                        if (slotId && decoded) audioBufToSlot.set(decoded, slotId);
-                        successCb(decoded);
-                    },
-                    errorCb
-                );
-            }
-            const p = origDecode.call(this, audioData);
-            if (p && typeof p.then === 'function') {
-                return p.then((decoded) => {
-                    if (slotId && decoded) audioBufToSlot.set(decoded, slotId);
-                    return decoded;
-                });
-            }
-            return p;
-        };
+                if (typeof successCb === 'function') {
+                    return origDecodeAudioData.call(
+                        this,
+                        audioData,
+                        (decoded) => {
+                            if (slotId && decoded) {
+                                audioBufToSlot.set(decoded, slotId);
+                                v4TaggedCount++;
+                            }
+                            successCb(decoded);
+                        },
+                        errorCb
+                    );
+                }
+                const p = origDecodeAudioData.call(this, audioData);
+                if (p && typeof p.then === 'function') {
+                    return p.then((decoded) => {
+                        if (slotId && decoded) {
+                            audioBufToSlot.set(decoded, slotId);
+                            v4TaggedCount++;
+                        }
+                        return decoded;
+                    });
+                }
+                return p;
+            };
+        }
     }
 
     if (win.AudioBufferSourceNode) {
@@ -781,15 +838,19 @@
                         if (isEnabled() && val) {
                             const slotId = audioBufToSlot.get(val);
                             if (slotId) {
+                                const ctx = this.context || sharedAudioCtx;
+                                if (ctx && ctx.state === 'suspended') {
+                                    ctx.resume().catch(() => {});
+                                }
                                 const pack = activePack;
                                 const pool = pack.decodedPools.get(slotId);
                                 if (pool && pool.length > 0) {
                                     const idx = pickRandomIndex(slotId, pool.length);
                                     val = pool[idx];
                                     console.log(`[TenhouRandomSE] WebAudio 热替换 slot[${slotId}] -> #${idx + 1} (${pack.label})`);
-                                } else if (pack.slotPools.has(slotId) && (this.context || sharedAudioCtx)) {
+                                } else if (pack.slotPools.has(slotId) && ctx) {
                                     // 尚未解码完成时异步补解并回退原生音效，绝不静音
-                                    ensureSlotDecoded(this.context || sharedAudioCtx, pack, slotId);
+                                    ensureSlotDecoded(ctx, pack, slotId);
                                 }
                             }
                         }
@@ -1167,7 +1228,9 @@
                     files: pool.map((x) => x.url.split('/').pop()),
                 };
             }
-            console.log(`[TenhouRandomSE] 当前角色: ${activePack.label}, 启用: ${isEnabled()}, /4/ 索引数: ${v4FingerprintToSlot.size}`);
+            console.log(
+                `[TenhouRandomSE] 当前: ${activePack.label} | 启用: ${isEnabled()} | 模式: ${isSplitMode() ? '男女分开' : '统一'} | AudioCtx: ${sharedAudioCtx ? sharedAudioCtx.state : 'null'} | /4/ 索引: ${v4FingerprintToSlot.size} | 已打标缓冲: ${v4TaggedCount}`
+            );
             console.table(out);
             return out;
         },
@@ -1181,14 +1244,18 @@
                 const idx = pickRandomIndex(key, dPool.length);
                 const bs = sharedAudioCtx.createBufferSource();
                 bs.buffer = dPool[idx];
-                bs.connect(lastGainNode || sharedAudioCtx.destination);
+                const dest = (lastGainNode && lastGainNode.gain && lastGainNode.gain.value > 0.05)
+                    ? lastGainNode
+                    : sharedAudioCtx.destination;
+                bs.connect(dest);
                 bs.start(0);
                 console.log(`[TenhouRandomSE] 试听(WebAudio) slot[${key}] -> #${idx + 1} (${activePack.label})`);
                 return;
             }
             const pool = activePack.slotPools.get(key);
             if (!pool || !pool.length) {
-                console.warn('[TenhouRandomSE] 未找到槽位:', key);
+                console.warn('[TenhouRandomSE] 该槽位当前为天凤原生或未配置:', key);
+                if (uiStatusUpdater) uiStatusUpdater(`槽位 ${key} 当前为原生（未配置替换语音）`);
                 return;
             }
             const idx = pickRandomIndex(key, pool.length);
