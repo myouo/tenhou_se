@@ -29,38 +29,29 @@
     const STORAGE_KEY_ACTIVE_ID = 'tenhou_custom_se_active_id_v3';
     const VIRTUAL_SLOT_PREFIX = 'https://tenhou-random-se.local/slot/';
 
-    // tenhou.net/4/latest.js 解包音频的 decodeAudioData 调用序号 -> tenhou.net/3 SE 索引映射
-    // g = [P.td(0), P.af(1), P.ub(2), P.cf(3), P.bf(4), P.xd(5), P.wb(6), P.Dc(7), P.$e(8), P.mf(9),
-    //      P.qd(10), P.Vb(11), P.Yb(12), P.Zb(13), P.ff(14), P.jf(15), P.vb(16), P.Ma(17),
-    //      P.vd(18), P.Xb(19), P.sd(20), P.ef(21), P.hf(22), P.lf(23),
-    //      P.ud(24), P.Wb(25), P.rd(26), P.df(27), P.gf(28), P.kf(29)]
-    const V4_DECODE_INDEX_TO_SLOT = {
-        1: '3',    // CLOCK
-        2: '6',    // DA (打牌)
-        5: '8',    // NAKI (鸣牌提示)
-        7: '9',    // NUKI (拔北)
-        9: '11',   // YAKU
-        // Classic 语音槽位
-        10: '27',  // KAN (C)
-        11: '25',  // PON (C)
-        12: '29',  // CHI (C)
-        13: '31',  // RIICHI (C)
-        14: '33',  // RON (C)
-        15: '35',  // TSUMO (C)
-        // Male 语音槽位
-        18: '29',  // CHI (M)
-        19: '25',  // PON (M)
-        20: '27',  // KAN (M)
-        21: '31',  // RIICHI (M)
-        22: '33',  // RON (M)
-        23: '35',  // TSUMO (M)
-        // Female 语音槽位
-        24: '30',  // CHI (F)
-        25: '26',  // PON (F)
-        26: '28',  // KAN (F)
-        27: '32',  // RIICHI (F)
-        28: '34',  // RON (F)
-        29: '36',  // TSUMO (F)
+    // tenhou.net/4/latest.js 内部音效函数 N(id, arg, delayMs) 的精确数字 ID -> /3/ SE 槽位映射
+    const V4_ID_TO_SLOT = {
+        107: '9',   // NUKI (拔北)
+        112: '40',  // START (开局)
+        1029: '41', // YAKUMAN (役满)
+        // PON (25=C/M, 26=F)
+        127: '25', 128: '25', 1013: '25', 1014: '25',
+        132: '26', 1015: '26',
+        // KAN (27=C/M, 28=F)
+        118: '27', 119: '27', 1016: '27', 1017: '27',
+        123: '28', 1018: '28',
+        // CHI (29=C/M, 30=F)
+        136: '29', 137: '29', 1010: '29', 1011: '29',
+        141: '30', 1012: '30',
+        // RIICHI (31=C/M, 32=F)
+        145: '31', 146: '31', 1019: '31', 1020: '31',
+        150: '32', 1021: '32',
+        // RON (33=C/M, 34=F)
+        154: '33', 155: '33', 1022: '33', 1023: '33',
+        159: '34', 1024: '34',
+        // TSUMO (35=C/M, 36=F)
+        163: '35', 164: '35', 1025: '35', 1026: '35',
+        168: '36', 1027: '36',
     };
 
     const urlAssetCache = new Map();
@@ -434,11 +425,7 @@
             sharedAudioCtx = this;
             let slotId = arrayBufToSlot.get(audioData);
 
-            // 在 tenhou.net/4 下，按内置二进制资源包解包的第 0..29 次 decodeAudioData 序号映射到对应 SE 槽位
-            if (!slotId && IS_V4) {
-                const idx = v4DecodeCounter++;
-                slotId = V4_DECODE_INDEX_TO_SLOT[idx] || null;
-            }
+// /4/ 使用下方 win.N 直接拦截，不再依赖 decodeAudioData 序号猜测
 
             if (slotId) {
                 initialPreloadPromise.then(() => ensureDecodedSlot(this, slotId));
@@ -713,6 +700,46 @@
         document.addEventListener('DOMContentLoaded', mountGui);
     } else {
         mountGui();
+    }
+
+    // ==========================================
+    // tenhou.net/4 专用：直接 Hook 全局播放函数 window.N(id, arg, delayMs)
+    // ==========================================
+    if (IS_V4) {
+        const v4HookTimer = setInterval(() => {
+            if (typeof win.N === 'function' && !win.N.__tenhouHooked && win.N.toString().length > 30) {
+                const origN = win.N;
+                const wrappedN = function (id, arg, delayMs) {
+                    const slotId = V4_ID_TO_SLOT[id];
+                    if (isEnabled() && slotId) {
+                        const pool = slotPools.get(slotId);
+                        if (pool && pool.length > 0) {
+                            const idx = pickRandomIndex(slotId, pool.length);
+                            const playIt = () => {
+                                const a = new OrigAudio(pool[idx].blobUrl);
+                                a.play().catch((err) => console.warn('[TenhouRandomSE] /4/ 播放失败:', err));
+                            };
+                            if (delayMs && delayMs > 0) {
+                                setTimeout(playIt, delayMs);
+                            } else {
+                                playIt();
+                            }
+                            // 组合音效保留天凤原生拍牌/特效声（113=鸣牌拍桌, 114=立直/和牌重音, 145=立直棒）
+                            if (id >= 1010 && id <= 1018) origN.call(this, 113, arg, delayMs);
+                            else if (id >= 1022 && id <= 1027) origN.call(this, 114, arg, delayMs);
+                            else if (id === 1020 || id === 1021) origN.call(this, 145, arg, delayMs);
+                            console.log(`[TenhouRandomSE] /4/ 替换 id=${id} -> slot[${slotId}] #${idx + 1}`);
+                            return;
+                        }
+                    }
+                    return origN.apply(this, arguments);
+                };
+                wrappedN.__tenhouHooked = true;
+                win.N = wrappedN;
+                clearInterval(v4HookTimer);
+                console.log('[TenhouRandomSE] 已成功挂载 tenhou.net/4 音效拦截器 (window.N)');
+            }
+        }, 100);
     }
 
     win.__tenhouRandomSE = {
