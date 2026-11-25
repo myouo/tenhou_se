@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         天凤 通用多语音随机 SE (支持 tenhou.net/3 & tenhou.net/4 + GUI)
 // @namespace    https://github.com/myouo/tenhou_se
-// @version      3.1.0
-// @description  同时支持 tenhou.net/3 与 tenhou.net/4！无侵入式底层 WebAudio 实时热替换，内置悬浮 GUI 随时切换角色语音，零延迟且高可靠
+// @version      3.2.0
+// @description  同时支持 tenhou.net/3 与 tenhou.net/4！无侵入式底层 WebAudio 实时热替换，支持男女声独立配置与原声回退
 // @match        https://tenhou.net/3/*
 // @match        https://tenhou.net/4/*
 // @run-at       document-start
@@ -27,7 +27,22 @@
     const STORAGE_KEY_ENABLED = 'tenhou_custom_se_enabled_v3';
     const STORAGE_KEY_PRESETS = 'tenhou_custom_se_presets_v3';
     const STORAGE_KEY_ACTIVE_ID = 'tenhou_custom_se_active_id_v3';
+    const STORAGE_KEY_SPLIT = 'tenhou_custom_se_split_v3';
+    const STORAGE_KEY_MALE_ID = 'tenhou_custom_se_male_id_v3';
+    const STORAGE_KEY_FEMALE_ID = 'tenhou_custom_se_female_id_v3';
+    const NATIVE_PRESET_ID = '__native__';
     const VIRTUAL_SLOT_PREFIX = 'https://tenhou-random-se.local/slot/';
+
+    const MALE_SLOTS = ['25', '27', '29', '31', '33', '35'];
+    const FEMALE_SLOTS = ['26', '28', '30', '32', '34', '36'];
+    const SLOT_PAIR = {
+        '25': '26', '26': '25',
+        '27': '28', '28': '27',
+        '29': '30', '30': '29',
+        '31': '32', '32': '31',
+        '33': '34', '34': '33',
+        '35': '36', '36': '35',
+    };
 
     // tenhou.net/4/latest.js 资源包中的原始语音 ID -> /3/ SE 槽位映射
     // 注：不映射 145（经典立直棒音效，男女立直时也会叠加播放）与 111（开局/役满共用提示音）
@@ -157,6 +172,60 @@
         try {
             if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_ACTIVE_ID, id);
             localStorage.setItem(STORAGE_KEY_ACTIVE_ID, id);
+        } catch {}
+    }
+
+    function isSplitMode() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return Boolean(GM_getValue(STORAGE_KEY_SPLIT, false));
+            }
+            return localStorage.getItem(STORAGE_KEY_SPLIT) === 'true';
+        } catch {
+            return false;
+        }
+    }
+
+    function setSplitMode(flag) {
+        try {
+            if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_SPLIT, Boolean(flag));
+            localStorage.setItem(STORAGE_KEY_SPLIT, String(Boolean(flag)));
+        } catch {}
+    }
+
+    function getMalePresetId() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return GM_getValue(STORAGE_KEY_MALE_ID, NATIVE_PRESET_ID);
+            }
+            return localStorage.getItem(STORAGE_KEY_MALE_ID) || NATIVE_PRESET_ID;
+        } catch {
+            return NATIVE_PRESET_ID;
+        }
+    }
+
+    function setMalePresetId(id) {
+        try {
+            if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_MALE_ID, id);
+            localStorage.setItem(STORAGE_KEY_MALE_ID, id);
+        } catch {}
+    }
+
+    function getFemalePresetId() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return GM_getValue(STORAGE_KEY_FEMALE_ID, getActivePresetId());
+            }
+            return localStorage.getItem(STORAGE_KEY_FEMALE_ID) || getActivePresetId();
+        } catch {
+            return getActivePresetId();
+        }
+    }
+
+    function setFemalePresetId(id) {
+        try {
+            if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_FEMALE_ID, id);
+            localStorage.setItem(STORAGE_KEY_FEMALE_ID, id);
         } catch {}
     }
 
@@ -403,6 +472,61 @@
         };
     }
 
+    async function fetchAndBuildPack(jsonUrl, myGen) {
+        const res = await smartRequest(jsonUrl, 'text');
+        if (myGen !== loadGeneration) return null;
+        return buildPackFromSeJson(jsonUrl, res.responseText, myGen);
+    }
+
+    function pickFromPack(pack, slotId) {
+        if (!pack) return null;
+        const raw = pack.slotPools.get(slotId) || (SLOT_PAIR[slotId] ? pack.slotPools.get(SLOT_PAIR[slotId]) : null);
+        const dec = pack.decodedPools.get(slotId) || (SLOT_PAIR[slotId] ? pack.decodedPools.get(SLOT_PAIR[slotId]) : null);
+        return raw ? { raw, dec } : null;
+    }
+
+    function mergeGenderPacks(malePack, femalePack, maleLabel, femaleLabel) {
+        const slotPools = new Map();
+        const decodedPools = new Map();
+
+        const copySlot = (targetSlot, picked) => {
+            if (!picked) return;
+            slotPools.set(targetSlot, picked.raw);
+            if (picked.dec && picked.dec.length > 0) {
+                decodedPools.set(targetSlot, picked.dec);
+            }
+        };
+
+        for (const s of MALE_SLOTS) copySlot(s, pickFromPack(malePack, s));
+        for (const s of FEMALE_SLOTS) copySlot(s, pickFromPack(femalePack, s));
+
+        // 拔北(9)等不区分性别的槽位：优先女声配置，其次男声配置
+        const allOther = new Set();
+        if (femalePack) {
+            for (const s of femalePack.slotPools.keys()) {
+                if (!SLOT_PAIR[s]) allOther.add(s);
+            }
+        }
+        if (malePack) {
+            for (const s of malePack.slotPools.keys()) {
+                if (!SLOT_PAIR[s]) allOther.add(s);
+            }
+        }
+        for (const s of allOther) {
+            copySlot(s, pickFromPack(femalePack, s) || pickFromPack(malePack, s));
+        }
+
+        const decodedCtx = (femalePack && femalePack.decodedCtx) || (malePack && malePack.decodedCtx) || sharedAudioCtx || null;
+        return {
+            label: `男:${maleLabel} / 女:${femaleLabel}`,
+            url: `${malePack ? malePack.url : 'native'}|${femalePack ? femalePack.url : 'native'}`,
+            slotPools,
+            decodedPools,
+            decodedCtx,
+            decodingSlots: new Set(),
+        };
+    }
+
     async function loadFromUrl(jsonUrl) {
         const myGen = ++loadGeneration;
         if (!isEnabled()) {
@@ -414,9 +538,7 @@
             return;
         }
         try {
-            const res = await smartRequest(jsonUrl, 'text');
-            if (myGen !== loadGeneration) return;
-            const built = await buildPackFromSeJson(jsonUrl, res.responseText, myGen);
+            const built = await fetchAndBuildPack(jsonUrl, myGen);
             if (!built || myGen !== loadGeneration) return;
 
             // 原子热替换：立即对下一声游戏音效生效，无需刷新页面
@@ -430,8 +552,52 @@
         }
     }
 
-    // 页面启动即开始后台预加载当前配置的 se.json
-    const initialPreloadPromise = loadFromUrl(getSavedUrl());
+    async function applyCurrentConfig() {
+        if (!isSplitMode()) {
+            return loadFromUrl(getSavedUrl());
+        }
+        const myGen = ++loadGeneration;
+        if (!isEnabled()) {
+            if (uiStatusUpdater) uiStatusUpdater('已禁用（使用原生 SE）');
+            return;
+        }
+        const presets = getPresets();
+        const maleId = getMalePresetId();
+        const femaleId = getFemalePresetId();
+        const malePreset = maleId === NATIVE_PRESET_ID ? null : presets.find((p) => p.id === maleId) || null;
+        const femalePreset = femaleId === NATIVE_PRESET_ID ? null : presets.find((p) => p.id === femaleId) || null;
+
+        try {
+            let maleBuilt = null;
+            let femaleBuilt = null;
+            if (malePreset && femalePreset && malePreset.url === femalePreset.url) {
+                maleBuilt = await fetchAndBuildPack(malePreset.url, myGen);
+                femaleBuilt = maleBuilt;
+            } else {
+                [maleBuilt, femaleBuilt] = await Promise.all([
+                    malePreset ? fetchAndBuildPack(malePreset.url, myGen) : Promise.resolve(null),
+                    femalePreset ? fetchAndBuildPack(femalePreset.url, myGen) : Promise.resolve(null),
+                ]);
+            }
+            if (myGen !== loadGeneration) return;
+
+            const malePack = maleBuilt ? maleBuilt.pack : null;
+            const femalePack = femaleBuilt ? femaleBuilt.pack : null;
+            const maleLabel = malePreset ? malePreset.name : '原生';
+            const femaleLabel = femalePreset ? femalePreset.name : '原生';
+
+            activePack = mergeGenderPacks(malePack, femalePack, maleLabel, femaleLabel);
+            console.log(`[TenhouRandomSE] 已热替换（男女分开）：${activePack.label}，共 ${activePack.slotPools.size} 个槽位（已解码 ${activePack.decodedPools.size} 个）`);
+            if (uiStatusUpdater) uiStatusUpdater();
+        } catch (err) {
+            if (myGen !== loadGeneration) return;
+            console.error('[TenhouRandomSE] 男女分开配置加载失败（保留当前可用语音）:', err);
+            if (uiStatusUpdater) uiStatusUpdater(`加载失败（保留当前）：${err.message || '请检查链接'}`);
+        }
+    }
+
+    // 页面启动即开始后台预加载当前配置
+    const initialPreloadPromise = applyCurrentConfig();
 
     // ==========================================
     // Hook fetch & XMLHttpRequest.prototype (保留原生原型与实例语义)
@@ -695,7 +861,7 @@
         panel.style.cssText = 'display:none;width:348px;max-height:calc(100vh - 80px);overflow-y:auto;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
 
         panel.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #f1f5f9;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid #f1f5f9;">
                 <div style="display:flex;align-items:center;gap:8px;">
                     <span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span>
                     <strong style="font-size:14px;color:#0f172a;font-weight:700;">天凤 SE 替换</strong>
@@ -706,13 +872,31 @@
                 </label>
             </div>
 
-            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">已保存配置（选择即实时热切换）</div>
-            <div style="display:flex;gap:6px;margin-bottom:10px;">
-                <select id="th-se-preset" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
-                <button id="th-se-del" title="删除当前配置" style="background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:12px;">删除</button>
+            <div style="display:flex;gap:4px;background:#f1f5f9;padding:3px;border-radius:8px;margin-bottom:10px;">
+                <button id="th-se-mode-unified" type="button" style="flex:1;border:none;border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px;font-weight:600;">统一替换</button>
+                <button id="th-se-mode-split" type="button" style="flex:1;border:none;border-radius:6px;padding:5px 8px;cursor:pointer;font-size:12px;font-weight:600;">男女分开</button>
             </div>
 
-            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">配置名称 & JSON 链接</div>
+            <div id="th-se-unified-box">
+                <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">已保存配置（选择即实时热切换）</div>
+                <div style="display:flex;gap:6px;margin-bottom:10px;">
+                    <select id="th-se-preset" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
+                    <button id="th-se-del" title="删除当前配置" style="background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:12px;">删除</button>
+                </div>
+            </div>
+
+            <div id="th-se-split-box" style="display:none;margin-bottom:10px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                    <span style="width:40px;font-size:12px;color:#2563eb;font-weight:700;">男声</span>
+                    <select id="th-se-male" style="flex:1;padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="width:40px;font-size:12px;color:#db2777;font-weight:700;">女声</span>
+                    <select id="th-se-female" style="flex:1;padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
+                </div>
+            </div>
+
+            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">新增 / 更新配置（名称 & JSON 链接）</div>
             <input id="th-se-name" type="text" placeholder="配置名称（如：冬马和纱 / 雪菜）"
                 style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:6px;font-size:12px;outline:none;" />
             <input id="th-se-url" type="text" value="${getSavedUrl().replace(/"/g, '&quot;')}"
@@ -726,17 +910,23 @@
 
             <div id="th-se-status" style="font-size:12px;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 10px;margin-bottom:12px;word-break:break-all;font-weight:500;"></div>
 
-            <div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">点击试听（每次随机切换）</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:11px;color:#64748b;font-weight:600;">点击试听（每次随机切换）</span>
+                <div id="th-se-test-gender" style="display:none;gap:4px;">
+                    <button type="button" data-g="m" style="padding:2px 8px;border-radius:999px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;cursor:pointer;">男声</button>
+                    <button type="button" data-g="f" style="padding:2px 8px;border-radius:999px;border:1px solid #cbd5e1;font-size:11px;font-weight:600;cursor:pointer;">女声</button>
+                </div>
+            </div>
             <div id="th-se-tests" style="display:flex;flex-wrap:wrap;gap:6px;">
                 ${[
-                    ['29', '吃'],
-                    ['25', '碰'],
-                    ['27', '杠'],
-                    ['31', '立直'],
-                    ['33', '荣'],
-                    ['35', '自摸'],
-                    ['9', '拔北'],
-                ].map(([id, label]) => `<button data-slot="${id}" style="background:#ffffff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.05);">${label}</button>`).join('')}
+                    ['29', '30', '吃'],
+                    ['25', '26', '碰'],
+                    ['27', '28', '杠'],
+                    ['31', '32', '立直'],
+                    ['33', '34', '荣'],
+                    ['35', '36', '自摸'],
+                    ['9', '9', '拔北'],
+                ].map(([mId, fId, label]) => `<button data-slot-m="${mId}" data-slot-f="${fId}" style="background:#ffffff;color:#1e293b;border:1px solid #cbd5e1;border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.05);">${label}</button>`).join('')}
             </div>
         `;
 
@@ -744,11 +934,58 @@
         root.appendChild(toggleBtn);
         document.body.appendChild(root);
 
+        const modeUnifiedBtn = panel.querySelector('#th-se-mode-unified');
+        const modeSplitBtn = panel.querySelector('#th-se-mode-split');
+        const unifiedBox = panel.querySelector('#th-se-unified-box');
+        const splitBox = panel.querySelector('#th-se-split-box');
         const presetSel = panel.querySelector('#th-se-preset');
+        const maleSel = panel.querySelector('#th-se-male');
+        const femaleSel = panel.querySelector('#th-se-female');
         const nameInput = panel.querySelector('#th-se-name');
         const urlInput = panel.querySelector('#th-se-url');
         const enableChk = panel.querySelector('#th-se-enable');
         const statusEl = panel.querySelector('#th-se-status');
+        const testGenderBox = panel.querySelector('#th-se-test-gender');
+        let testGender = 'f';
+
+        function renderTestGenderButtons() {
+            testGenderBox.style.display = isSplitMode() ? 'flex' : 'none';
+            testGenderBox.querySelectorAll('button').forEach((b) => {
+                const active = b.getAttribute('data-g') === testGender;
+                b.style.background = active ? '#2563eb' : '#ffffff';
+                b.style.color = active ? '#ffffff' : '#475569';
+                b.style.borderColor = active ? '#2563eb' : '#cbd5e1';
+            });
+        }
+
+        function renderModeUI() {
+            const split = isSplitMode();
+            unifiedBox.style.display = split ? 'none' : 'block';
+            splitBox.style.display = split ? 'block' : 'none';
+            modeUnifiedBtn.style.background = split ? 'transparent' : '#ffffff';
+            modeUnifiedBtn.style.color = split ? '#64748b' : '#0f172a';
+            modeUnifiedBtn.style.boxShadow = split ? 'none' : '0 1px 3px rgba(15,23,42,.12)';
+            modeSplitBtn.style.background = split ? '#ffffff' : 'transparent';
+            modeSplitBtn.style.color = split ? '#0f172a' : '#64748b';
+            modeSplitBtn.style.boxShadow = split ? '0 1px 3px rgba(15,23,42,.12)' : 'none';
+            renderTestGenderButtons();
+        }
+
+        function fillGenderSelect(sel, selectedId, presets) {
+            sel.innerHTML = '';
+            const nativeOpt = document.createElement('option');
+            nativeOpt.value = NATIVE_PRESET_ID;
+            nativeOpt.textContent = '天凤原生（不替换）';
+            if (selectedId === NATIVE_PRESET_ID) nativeOpt.selected = true;
+            sel.appendChild(nativeOpt);
+            for (const item of presets) {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = item.name;
+                if (item.id === selectedId) opt.selected = true;
+                sel.appendChild(opt);
+            }
+        }
 
         function renderPresets() {
             const presets = getPresets();
@@ -761,6 +998,9 @@
                 if (item.id === activeId) opt.selected = true;
                 presetSel.appendChild(opt);
             }
+            fillGenderSelect(maleSel, getMalePresetId(), presets);
+            fillGenderSelect(femaleSel, getFemalePresetId(), presets);
+
             const active = presets.find((x) => x.id === presetSel.value) || presets[0];
             if (active) {
                 nameInput.value = active.name;
@@ -769,6 +1009,7 @@
         }
 
         renderPresets();
+        renderModeUI();
 
         uiStatusUpdater = (customMsg) => {
             if (customMsg) {
@@ -785,6 +1026,38 @@
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
         });
 
+        modeUnifiedBtn.addEventListener('click', async () => {
+            if (!isSplitMode()) return;
+            setSplitMode(false);
+            renderModeUI();
+            uiStatusUpdater('正在切换为统一替换模式...');
+            await applyCurrentConfig();
+        });
+
+        modeSplitBtn.addEventListener('click', async () => {
+            if (isSplitMode()) return;
+            setSplitMode(true);
+            renderModeUI();
+            uiStatusUpdater('正在切换为男女分开模式...');
+            await applyCurrentConfig();
+        });
+
+        maleSel.addEventListener('change', async () => {
+            setMalePresetId(maleSel.value);
+            setEnabled(true);
+            enableChk.checked = true;
+            uiStatusUpdater('正在热替换男声配置...');
+            await applyCurrentConfig();
+        });
+
+        femaleSel.addEventListener('change', async () => {
+            setFemalePresetId(femaleSel.value);
+            setEnabled(true);
+            enableChk.checked = true;
+            uiStatusUpdater('正在热替换女声配置...');
+            await applyCurrentConfig();
+        });
+
         presetSel.addEventListener('change', async () => {
             const presets = getPresets();
             const picked = presets.find((x) => x.id === presetSel.value);
@@ -796,7 +1069,7 @@
             setEnabled(true);
             enableChk.checked = true;
             uiStatusUpdater(`正在后台加载「${picked.name}」...`);
-            await loadFromUrl(picked.url);
+            await applyCurrentConfig();
         });
 
         panel.querySelector('#th-se-save').addEventListener('click', async () => {
@@ -820,8 +1093,8 @@
             renderPresets();
             setEnabled(true);
             enableChk.checked = true;
-            uiStatusUpdater(`已保存，正在热替换「${n}」...`);
-            await loadFromUrl(u);
+            uiStatusUpdater(isSplitMode() ? `已保存「${n}」，可在上方男/女下拉中选用` : `已保存，正在热替换「${n}」...`);
+            await applyCurrentConfig();
         });
 
         panel.querySelector('#th-se-del').addEventListener('click', async () => {
@@ -834,20 +1107,20 @@
             savePresets(presets);
             setActivePresetId(presets[0].id);
             setSavedUrl(presets[0].url);
+            if (getMalePresetId() === delId) setMalePresetId(NATIVE_PRESET_ID);
+            if (getFemalePresetId() === delId) setFemalePresetId(presets[0].id);
             renderPresets();
             uiStatusUpdater(`已切换至「${presets[0].name}」...`);
-            await loadFromUrl(presets[0].url);
+            await applyCurrentConfig();
         });
 
         enableChk.addEventListener('change', async () => {
             setEnabled(enableChk.checked);
             if (!enableChk.checked) {
                 uiStatusUpdater('已禁用（使用原生 SE）');
-            } else if (activePack.url === urlInput.value.trim() && activePack.slotPools.size > 0) {
-                uiStatusUpdater();
             } else {
                 uiStatusUpdater('正在加载...');
-                await loadFromUrl(urlInput.value.trim());
+                await applyCurrentConfig();
             }
         });
 
@@ -861,9 +1134,19 @@
             await loadFromUrl(u);
         });
 
+        testGenderBox.querySelectorAll('button').forEach((b) => {
+            b.addEventListener('click', () => {
+                testGender = b.getAttribute('data-g');
+                renderTestGenderButtons();
+            });
+        });
+
         panel.querySelectorAll('#th-se-tests button').forEach((btn) => {
             btn.addEventListener('click', () => {
-                win.__tenhouRandomSE.test(btn.getAttribute('data-slot'));
+                const slot = isSplitMode() && testGender === 'f'
+                    ? btn.getAttribute('data-slot-f')
+                    : btn.getAttribute('data-slot-m');
+                win.__tenhouRandomSE.test(slot);
             });
         });
     }
