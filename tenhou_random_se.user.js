@@ -25,6 +25,8 @@
     const DEFAULT_SE_JSON_URL = 'https://se.nivalis.is/kazusa.json';
     const STORAGE_KEY_URL = 'tenhou_custom_se_url_v3';
     const STORAGE_KEY_ENABLED = 'tenhou_custom_se_enabled_v3';
+    const STORAGE_KEY_PRESETS = 'tenhou_custom_se_presets_v3';
+    const STORAGE_KEY_ACTIVE_ID = 'tenhou_custom_se_active_id_v3';
     const VIRTUAL_SLOT_PREFIX = 'https://tenhou-random-se.local/slot/';
 
     // tenhou.net/4/latest.js 解包音频的 decodeAudioData 调用序号 -> tenhou.net/3 SE 索引映射
@@ -113,6 +115,46 @@
         try {
             if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_ENABLED, Boolean(flag));
             localStorage.setItem(STORAGE_KEY_ENABLED, String(Boolean(flag)));
+        } catch {}
+    }
+
+    function getPresets() {
+        const fallback = [{ id: 'kazusa', name: '冬馬かずさ（冬马和纱）', url: DEFAULT_SE_JSON_URL }];
+        try {
+            let raw = null;
+            if (typeof GM_getValue === 'function') {
+                raw = GM_getValue(STORAGE_KEY_PRESETS, null);
+            }
+            if (!raw) raw = localStorage.getItem(STORAGE_KEY_PRESETS);
+            const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            if (Array.isArray(list) && list.length > 0) return list;
+        } catch {}
+        return fallback;
+    }
+
+    function savePresets(list) {
+        try {
+            const json = JSON.stringify(list);
+            if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_PRESETS, json);
+            localStorage.setItem(STORAGE_KEY_PRESETS, json);
+        } catch {}
+    }
+
+    function getActivePresetId() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return GM_getValue(STORAGE_KEY_ACTIVE_ID, 'kazusa');
+            }
+            return localStorage.getItem(STORAGE_KEY_ACTIVE_ID) || 'kazusa';
+        } catch {
+            return 'kazusa';
+        }
+    }
+
+    function setActivePresetId(id) {
+        try {
+            if (typeof GM_setValue === 'function') GM_setValue(STORAGE_KEY_ACTIVE_ID, id);
+            localStorage.setItem(STORAGE_KEY_ACTIVE_ID, id);
         } catch {}
     }
 
@@ -505,7 +547,7 @@
         toggleBtn.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#ffffff;color:#0f172a;border:1px solid #cbd5e1;border-radius:999px;padding:8px 14px;cursor:pointer;box-shadow:0 6px 20px rgba(15,23,42,.16),0 1px 3px rgba(15,23,42,.08);font-weight:600;font-size:13px;letter-spacing:.2px;';
 
         const panel = document.createElement('div');
-        panel.style.cssText = 'display:none;width:336px;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
+        panel.style.cssText = 'display:none;width:348px;background:#ffffff;color:#0f172a;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 18px 40px rgba(15,23,42,.22),0 2px 8px rgba(15,23,42,.08);';
 
         panel.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #f1f5f9;">
@@ -518,15 +560,27 @@
                     <input id="th-se-enable" type="checkbox" ${isEnabled() ? 'checked' : ''} style="accent-color:#2563eb;cursor:pointer;" /> 启用
                 </label>
             </div>
-            <div style="margin-bottom:6px;font-size:12px;color:#475569;font-weight:600;">SE 配置 JSON 链接</div>
+
+            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">已保存配置（选择即切换）</div>
+            <div style="display:flex;gap:6px;margin-bottom:10px;">
+                <select id="th-se-preset" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:12px;font-weight:500;outline:none;"></select>
+                <button id="th-se-del" title="删除当前配置" style="background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:8px;padding:7px 10px;cursor:pointer;font-weight:600;font-size:12px;">删除</button>
+            </div>
+
+            <div style="margin-bottom:5px;font-size:12px;color:#475569;font-weight:600;">配置名称 & JSON 链接</div>
+            <input id="th-se-name" type="text" placeholder="配置名称（如：冬马和纱 / 雪菜）"
+                style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:6px;font-size:12px;outline:none;" />
             <input id="th-se-url" type="text" value="${getSavedUrl().replace(/"/g, '&quot;')}"
                 placeholder="https://se.nivalis.is/kazusa.json"
-                style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:10px;font-size:12px;outline:none;" />
+                style="width:100%;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a;margin-bottom:10px;font-size:12px;outline:none;" />
+
             <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <button id="th-se-apply" style="flex:1;background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;box-shadow:0 2px 6px rgba(37,99,235,.28);">应用并加载</button>
-                <button id="th-se-reset" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;">默认和纱</button>
+                <button id="th-se-save" style="flex:1;background:#2563eb;color:#ffffff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;box-shadow:0 2px 6px rgba(37,99,235,.28);">保存并应用</button>
+                <button id="th-se-apply" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:12px;">仅临时加载</button>
             </div>
+
             <div id="th-se-status" style="font-size:12px;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 10px;margin-bottom:12px;word-break:break-all;font-weight:500;"></div>
+
             <div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">点击试听（每次随机切换）</div>
             <div id="th-se-tests" style="display:flex;flex-wrap:wrap;gap:6px;">
                 ${[
@@ -545,9 +599,31 @@
         root.appendChild(toggleBtn);
         document.body.appendChild(root);
 
+        const presetSel = panel.querySelector('#th-se-preset');
+        const nameInput = panel.querySelector('#th-se-name');
         const urlInput = panel.querySelector('#th-se-url');
         const enableChk = panel.querySelector('#th-se-enable');
         const statusEl = panel.querySelector('#th-se-status');
+
+        function renderPresets() {
+            const presets = getPresets();
+            const activeId = getActivePresetId();
+            presetSel.innerHTML = '';
+            for (const item of presets) {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = item.name;
+                if (item.id === activeId) opt.selected = true;
+                presetSel.appendChild(opt);
+            }
+            const active = presets.find((x) => x.id === presetSel.value) || presets[0];
+            if (active) {
+                nameInput.value = active.name;
+                urlInput.value = active.url;
+            }
+        }
+
+        renderPresets();
 
         uiStatusUpdater = () => {
             statusEl.textContent = `状态：${loadedCharLabel}（${slotPools.size} 槽位）`;
@@ -556,6 +632,60 @@
 
         toggleBtn.addEventListener('click', () => {
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        });
+
+        presetSel.addEventListener('change', async () => {
+            const presets = getPresets();
+            const picked = presets.find((x) => x.id === presetSel.value);
+            if (!picked) return;
+            setActivePresetId(picked.id);
+            setSavedUrl(picked.url);
+            nameInput.value = picked.name;
+            urlInput.value = picked.url;
+            setEnabled(true);
+            enableChk.checked = true;
+            statusEl.textContent = `正在切换至「${picked.name}」...`;
+            await loadFromUrl(picked.url);
+        });
+
+        panel.querySelector('#th-se-save').addEventListener('click', async () => {
+            const u = urlInput.value.trim();
+            if (!u) return;
+            const n = nameInput.value.trim() || u.split('/').pop().replace(/\.json$/i, '') || '自定义配置';
+            const presets = getPresets();
+            const existing = presets.find((x) => x.name === n || x.url === u);
+            let targetId;
+            if (existing) {
+                existing.name = n;
+                existing.url = u;
+                targetId = existing.id;
+            } else {
+                targetId = 'p_' + Date.now();
+                presets.push({ id: targetId, name: n, url: u });
+            }
+            savePresets(presets);
+            setActivePresetId(targetId);
+            setSavedUrl(u);
+            renderPresets();
+            setEnabled(true);
+            enableChk.checked = true;
+            statusEl.textContent = `已保存并加载「${n}」...`;
+            await loadFromUrl(u);
+        });
+
+        panel.querySelector('#th-se-del').addEventListener('click', async () => {
+            let presets = getPresets();
+            const delId = presetSel.value;
+            presets = presets.filter((x) => x.id !== delId);
+            if (presets.length === 0) {
+                presets = [{ id: 'kazusa', name: '冬馬かずさ（冬马和纱）', url: DEFAULT_SE_JSON_URL }];
+            }
+            savePresets(presets);
+            setActivePresetId(presets[0].id);
+            setSavedUrl(presets[0].url);
+            renderPresets();
+            statusEl.textContent = `已切换至「${presets[0].name}」...`;
+            await loadFromUrl(presets[0].url);
         });
 
         enableChk.addEventListener('change', async () => {
@@ -570,15 +700,6 @@
             enableChk.checked = true;
             statusEl.textContent = '正在加载并预解码...';
             await loadFromUrl(u);
-        });
-
-        panel.querySelector('#th-se-reset').addEventListener('click', async () => {
-            urlInput.value = DEFAULT_SE_JSON_URL;
-            setSavedUrl(DEFAULT_SE_JSON_URL);
-            setEnabled(true);
-            enableChk.checked = true;
-            statusEl.textContent = '正在加载默认配置...';
-            await loadFromUrl(DEFAULT_SE_JSON_URL);
         });
 
         panel.querySelectorAll('#th-se-tests button').forEach((btn) => {
