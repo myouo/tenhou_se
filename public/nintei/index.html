@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>天鳳 認定状ジェネレーター</title>
+<meta name="description" content="Tenhou 認定状（昇段窗口）生成器：输入昵称、段位、日期，还原 tenhou.net 的「認定」窗口，支持官方 10 种语言与 PNG 导出。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2311141b'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%23f3e6c8' font-family='serif'%3E%E8%AA%8D%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --kai: "TenhouKai", "cwTeX Q Kai T", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif CJK JP", serif;
+    --bodyFont: "Noto Sans CJK JP", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+    --bg: #0b0d12;
+    --panel: rgba(23, 26, 33, 0.88);
+    --line: #262b36;
+    --line-2: #303747;
+    --text: #e8ebf2;
+    --muted: #8f97a8;
+    --muted-2: #767e90;
+    --gold: #e3bd6d;
+    --gold-2: #c79a42;
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 700px at 18% -12%, #1c2233 0%, rgba(28, 34, 51, 0) 60%),
+      radial-gradient(900px 600px at 110% 10%, #241d14 0%, rgba(36, 29, 20, 0) 55%),
+      #080a0e;
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    max-width: 1380px;
+    margin: 0 auto;
+    padding: 26px 24px 34px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .brandMark {
+    flex: none;
+    font-family: var(--kai);
+    font-size: 28px;
+    line-height: 1;
+    padding: 11px 13px 12px;
+    border: 1px solid #3a4050;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #1c202b, #11141b);
+    color: #f3e6c8;
+    letter-spacing: 0.06em;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+  }
+  .brandText { min-width: 0; }
+  .brandText h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .brandText p {
+    margin: 5px 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .langPick {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .langPick select { width: auto; min-width: 9.5em; min-height: 34px; padding: 6px 10px; }
+  main {
+    display: grid;
+    grid-template-columns: 322px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start;
+  }
+  .panel {
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    padding: 19px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+  }
+  .panel h2 {
+    margin: 0 0 2px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #7f8798;
+  }
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field > span { font-size: 12.5px; color: #aab2c3; }
+  input, select, button { font: inherit; }
+  input[type="text"], input[type="date"], select {
+    width: 100%;
+    min-height: 38px;
+    padding: 9px 11px;
+    border: 1px solid #2b3140;
+    border-radius: 9px;
+    background: #0d1016;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input[type="text"]:focus, input[type="date"]:focus, select:focus {
+    border-color: #b98d3e;
+    box-shadow: 0 0 0 3px rgba(185, 141, 62, 0.16);
+  }
+  .seg {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid #2b3140;
+    border-radius: 9px;
+    background: #0d1016;
+  }
+  .seg label { position: relative; flex: 1; }
+  .seg input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .seg span {
+    display: block;
+    padding: 7px 8px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 13px;
+    color: #98a1b3;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .seg input:checked + span {
+    background: #262c39;
+    color: #fff;
+    box-shadow: inset 0 0 0 1px #3a4152;
+  }
+  .actions { display: flex; gap: 10px; margin-top: 4px; }
+  .btn {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    background: #1a1f29;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, filter 0.15s, transform 0.05s;
+  }
+  .btn:hover { background: #222838; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: linear-gradient(180deg, var(--gold), var(--gold-2));
+    border-color: #8d6a26;
+    color: #1a1305;
+    font-weight: 650;
+  }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: 0.5; cursor: wait; filter: none; }
+  .note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.65; color: var(--muted-2); }
+  .preview { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .previewHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9aa3b5;
+  }
+  .pill {
+    padding: 4px 10px;
+    border: 1px solid #2a3040;
+    border-radius: 999px;
+    background: #161a23;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: none;
+    color: var(--muted);
+  }
+  .stageWrap {
+    padding: 14px;
+    border: 1px solid #242936;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(22, 25, 32, 0.9), rgba(12, 14, 19, 0.9));
+  }
+  .stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #000;
+    box-shadow: inset 0 0 0 1px #1b1f27, 0 20px 60px rgba(0, 0, 0, 0.55);
+  }
+  .cert {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    color: #fff;
+    text-align: center;
+    font-family: var(--bodyFont);
+    line-height: 1;
+    opacity: 0;
+    will-change: opacity;
+  }
+  .cert.style-v4 {
+    padding: 1em 0;
+    border: 1px solid #444;
+    background: rgba(0, 0, 0, 0.9);
+  }
+  .cert.style-v3 {
+    padding: 1em 0.5em;
+    border: 1px solid #444;
+    background: rgba(0, 0, 0, 0.85);
+  }
+  .cert .title {
+    font-family: var(--kai);
+    font-size: 400%;
+    font-weight: 400;
+    line-height: 1;
+  }
+  /* 标题 margin 在 JS 中按基础字号写 px（本家 n[4].style.margin = 2*b / 3*b） */
+  .cert .bodyWrap { margin: 0; }
+  .cert.style-v4 .bodyWrap { margin: 2em 0.5em 1em; }
+  .cert .bodyText {
+    display: inline-block;
+    margin: 1em 0;
+    vertical-align: top;
+    text-align: left;
+  }
+  .cert .line {
+    height: 1em;
+    line-height: 1;
+    white-space: pre;
+  }
+  .cert .ok { margin: 0; font-family: var(--bodyFont); font-size: 1em; cursor: default; }
+  .cert.style-v4 .ok {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 8em;
+    height: 3em;
+    border: 1px solid #444;
+    color: #fff;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.7) 0%,
+      rgba(107, 107, 107, 0.5) 50%,
+      rgba(31, 31, 31, 0.5) 50%,
+      rgba(0, 0, 0, 0.7) 100%
+    );
+    text-shadow: #000 -0.03em -0.03em 0, #000 -0.03em 0.03em 0, #000 0.03em -0.03em 0,
+      #000 0.06em 0.06em 0;
+  }
+  .cert.style-v3 .ok {
+    height: 2em;
+    padding: 0 2em;
+    border: 2px outset #d6d6d6;
+    background: #efefef;
+    color: #000;
+  }
+  .hint { margin: 0; font-size: 11.5px; color: var(--muted-2); }
+  footer {
+    padding-top: 15px;
+    border-top: 1px solid #1e232d;
+    font-size: 11.5px;
+    color: #666f80;
+    line-height: 1.6;
+  }
+  @media (max-width: 940px) {
+    main { grid-template-columns: 1fr; }
+    .panel { position: static; }
+    .brandText p { display: none; }
+  }
+  @media (max-width: 560px) {
+    .app { padding: 18px 14px 26px; }
+    .actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brandMark">認定</span>
+      <div class="brandText">
+        <h1 id="appTitle">天鳳 認定状ジェネレーター</h1>
+        <p id="appSub">tenhou.net の「認定」昇段ウィンドウを再現</p>
+      </div>
+    </div>
+    <label class="langPick">
+      <span id="langLabel">言語</span>
+      <select id="langSelect" aria-label="Language"></select>
+    </label>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="ctrlTitle">
+      <h2 id="ctrlTitle">設定</h2>
+
+      <label class="field">
+        <span id="lblName">名前</span>
+        <input id="nameInput" type="text" maxlength="24" autocomplete="off" spellcheck="false" value="NoName" />
+      </label>
+
+      <label class="field">
+        <span id="lblRank">段位</span>
+        <select id="rankSelect"></select>
+      </label>
+
+      <label class="field">
+        <span id="lblDate">日付</span>
+        <input id="dateInput" type="date" />
+      </label>
+
+      <div class="field">
+        <span id="lblMode">対局</span>
+        <div class="seg" role="radiogroup" aria-labelledby="lblMode">
+          <label>
+            <input type="radio" name="mode" value="four" checked />
+            <span id="lblFour">四麻</span>
+          </label>
+          <label>
+            <input type="radio" name="mode" value="three" />
+            <span id="lblThree">三麻</span>
+          </label>
+        </div>
+      </div>
+
+      <label class="field">
+        <span id="lblStyle">クライアント</span>
+        <select id="styleSelect">
+          <option value="v4" id="optV4">/4/</option>
+          <option value="v3" id="optV3">/3/</option>
+        </select>
+      </label>
+
+      <div class="actions">
+        <button id="replayBtn" class="btn ghost" type="button">アニメを再生</button>
+        <button id="exportBtn" class="btn primary" type="button">PNG 書き出し</button>
+      </div>
+
+      <p class="note" id="note"></p>
+    </section>
+
+    <section class="preview">
+      <div class="previewHead">
+        <span id="lblPreview">プレビュー</span>
+        <span class="pill" id="fadeHint">3.0s fade-in</span>
+      </div>
+      <div class="stageWrap">
+        <div class="stage" id="stage">
+          <div class="cert style-v4" id="cert">
+            <div class="title" id="certTitle">認定</div>
+            <div class="bodyWrap"><div class="bodyText" id="certBody"></div></div>
+            <button class="ok" id="certOk" type="button" tabindex="-1">OK</button>
+          </div>
+        </div>
+      </div>
+      <p class="hint" id="exportHint"></p>
+    </section>
+  </main>
+
+  <footer id="disclaimer"></footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LANGS = ["ja", "en", "zh", "ko", "ru", "fr", "it", "es", "vi", "pt", "de"];
+  var LANG_LABEL = {
+    ja: "日本語", en: "English", zh: "中文", ko: "한국어", ru: "Русский",
+    fr: "Français", it: "Italiano", es: "Español", vi: "Tiếng Việt",
+    pt: "Português", de: "Deutsch"
+  };
+
+  // 官方语言表 string20220614_<lang>.json 第 360/361 条原文
+  var TEMPLATES = {
+    ja: {
+      four: "認定段位/級位 : $DAN\n\n$UNAME 殿\n\n貴殿は天鳳において卓越した技能を遺憾なく発揮され優秀な\n成績をおさめられました。今後もさらなる雀力向上に精進され\nますようここに段位/級位を認定し栄誉を称えます。\n\n$YYYY年$MM月$DD日\n天鳳段位認定協会\n",
+      three: "認定段位/級位 : $DAN\n\n$UNAME 殿\n\n貴殿は天鳳において卓越した技能を遺憾なく発揮され優秀な\n成績をおさめられました。今後もさらなる雀力向上に精進され\nますようここに段位/級位を認定し栄誉を称えます。\n\n$YYYY年$MM月$DD日\n天鳳サンマ漁業協会\n"
+    },
+    en: {
+      four: "You have been promoted to: $DAN\n\nDear $UNAME\n\nTenhou recognizes your superior display of expertise and mastery of the game. In consideration of your outstanding game records, we hereby grant you the rank of $DAN in expectation that you will continue to brush up your mahjong abilities to achieve new heights.\n\n$YYYY-$MM-$DD\nThe Tenhou Rank Committee\n",
+      three: "You have been promoted to: SANMA $DAN\n\nDear $UNAME\n\nTenhou recognizes your superior display of expertise and mastery of the game. In consideration of your outstanding game records, we hereby grant you the rank of $DAN in expectation that you will continue to brush up your mahjong abilities to achieve new heights.\n\n$YYYY-$MM-$DD\nThe Tenhou Saury Committee\n"
+    },
+    zh: {
+      four: "认定段位/级位 : $DAN\n\n$UNAME 雀士\n\n您在天凤上发挥了卓越的技术并取得了优异的成绩。\n希望您今后继续精进雀力，\n我们在此祝贺并授予您段位/级位的成绩。\n\n$YYYY年$MM月$DD日\n天凤段位认定协会\n",
+      three: "认定段位/级位 : $DAN\n\n$UNAME 雀士\n\n您在天凤上发挥了卓越的技术并取得了优异的成绩。\n希望您今后继续精进雀力，\n我们在此祝贺并授予您段位/级位的成绩。\n\n$YYYY年$MM月$DD日\n天凤三麻渔业协会\n"
+    },
+    ko: {
+      four: "인정단위/급위 : $DAN\n\n$UNAME 님\n\n귀하는 천봉에서 탁월한 능력으로 좋은 성적을 거뒀습니다.\n앞으로도 작력향상을 위하여 정진할 수 있도록 단위/급위를\n인정하고 이에 그 영예를 기리는 바입니다.\n\n$YYYY년$MM월$DD일\n천봉 단위인정협회\n",
+      three: "인정단위/급위 : $DAN\n\n$UNAME 님\n\n귀하는 천봉에서 탁월한 능력으로 좋은 성적을 거뒀습니다.\n앞으로도 작력향상을 위하여 정진할 수 있도록 단위/급위를\n인정하고 이에 그 영예를 기리는 바입니다.\n\n$YYYY년$MM월$DD일\n천봉 꽁치조업협회\n"
+    },
+    ru: {
+      four: "Ваш ранг повышен до: $DAN\n\n$UNAME\n\nВы показали непревзойденную компетентность и мастерство. Принимая во внимание ваши достижения в игре, мы присваиваем вам ранг $DAN. Надеемся, что вы продолжите оттачивать свои навыки и достигните новых высот в маджонге.\n\n$YYYY-$MM-$DD\nАссоциация рангов Тенхо\n",
+      three: "Ваш ранг повышен до: $DAN\n\n$UNAME\n\nВы показали непревзойденную компетентность и мастерство. Принимая во внимание ваши достижения в игре, мы присваиваем вам ранг $DAN. Надеемся, что вы продолжите оттачивать свои навыки и достигните новых высот в маджонге.\n\n$YYYY-$MM-$DD\nАссоциация Тенхо Сайра\n"
+    },
+    fr: {
+      four: "Vous avez été promu: $DAN\n\nCher $UNAME,\n\nTenhou reconnait que vous avez démontré une expertise et maîtrise du jeu supérieure. En considération de vos résultats exceptionnels, nous vous accordons par la présente le rang de $DAN, dans l'espoir que vous continuerez à perfectionner vos compétences de mahjong pour atteindre de nouveaux sommets. \n\n$YYYY-$MM-$DD\nLe Comité de Classement de Tenhou\n",
+      three: "Vous avez été promu: SANMA $DAN\n\nCher $UNAME,\n\nTenhou reconnait que vous avez démontré une expertise et maîtrise du jeu supérieure. En considération de vos résultats exceptionnels, nous vous accordons par la présente le rang de $DAN, dans l'espoir que vous continuerez à perfectionner vos compétences de mahjong pour atteindre de nouveaux sommets. \n\n$YYYY-$MM-$DD\nLe Comité de poisson balauré de Tenhou\n"
+    },
+    it: {
+      four: "Sei stato promosso a: $DAN\n\nSpettabile $UNAME\n\nTenhou riconosce la tua superiore dimostrazione di competenza e padronanza del gioco. In considerazione dei tuoi risultati eccezionali, ti proclamiamo il rango di $DAN aspettandoci che tu continui a migliorare le tue abilità di mahjong per raggiungere nuovi traguardi.\n\n$DD-$MM-$YYYY\nIl comitato di Tenhou\n",
+      three: "Sei stato promosso a: SANMA $DAN\n\nSpettabile $UNAME\n\nTenhou riconosce la tua superiore dimostrazione di competenza e padronanza del gioco. In considerazione dei tuoi risultati eccezionali, ti proclamiamo il rango di $DAN aspettandoci che tu continui a migliorare le tue abilità di mahjong per raggiungere nuovi traguardi.\n\n$DD-$MM-$YYYY\nIl comitato Costardella di Tenhou\n"
+    },
+    es: {
+      four: "Has sido ascendido a: $DAN\n\nEstimado $UNAME\n\nTenhou reconoce tu muestra superior de dominio y maestría en el juego. Como reconocimiento de estos resultados excepcionales, te otorgamos aquí en más el título de $DAN y esperamos que continúes perfeccionando tus habilidades para alcanzar nuevas alturas.\n\n$YYYY-$MM-$DD\nComisión de Ranking de Tenhou\n",
+      three: "Has sido ascendido a: SANMA $DAN\n\nEstimado $UNAME\n\nTenhou reconoce tu muestra superior de dominio y maestría en el juego. Como reconocimiento de estos resultados excepcionales, te otorgamos aquí en más el título de $DAN y esperamos que continúes perfeccionando tus habilidades para alcanzar nuevas alturas.\n\n$YYYY-$MM-$DD\nComisión Paparda de Ranking de Tenhou\n"
+    },
+    vi: {
+      four: "Bạn đã được thăng cấp lên: $DAN\n\nChúc mừng $UNAME\n\nBạn đã cho thấy kĩ năng chơi mạt chược xuất sắc của mình. Đây là phần thưởng xứng đáng cho nỗ lực của bạn.\nMong bạn tiếp tục cố gắng để đạt được những thành tích cao hơn nữa trong tương lai!\n\n$DD/$MM/$YYYY\nBan quản trị Tenhou\n",
+      three: "Bạn đã được thăng cấp lên: $DAN\n\nChúc mừng $UNAME\n\nBạn đã cho thấy kĩ năng chơi mạt chược xuất sắc của mình. Đây là phần thưởng xứng đáng cho nỗ lực của bạn.\nMong bạn tiếp tục cố gắng để đạt được những thành tích cao hơn nữa trong tương lai!\n\n$DD/$MM/$YYYY\nBan quản trị Tenhou\n"
+    },
+    pt: {
+      four: "Você atingiu o nível de: $DAN\n\nPrezado $UNAME\n\nO Tenhou reconhece que você demonstrou ter experiência e domínio do jogo. Em virtude dos seus excelentes resultados, conferimos a você o título de $DAN. Esperamos que continue evoluindo no Mahjong e superando novas barreiras.\n\n$DD/$MM/$YYYY\nComitê de Certificação de Níveis do Tenhou\n",
+      three: "Você atingiu o nível de: $DAN no SANMA\n\nPrezado $UNAME\n\nO Tenhou reconhece que você demonstrou ter experiência e domínio do jogo. Em virtude dos seus excelentes resultados, conferimos a você o título de $DAN. Esperamos que continue evoluindo no Mahjong e superando novas barreiras.\n\n$DD/$MM/$YYYY\nComitê de pesca de Sanma do Tenhou\n"
+    },
+    de: {
+      four: "Du bist aufgestiegen zum: $DAN\n\nLieber/Liebe $UNAME\n\nTenhō erkennt Deine überragende Leistung und Expertise in diesem Spiel an. Unter Berücksichtigung deiner hervorragenden Spielstatistiken verleihen wir Dir deshalb hiermit den Rang eines $DAN. Wir wünschen uns, dass Du dich in Zukunft noch weiter entwickeln wirst und neue Höhen erreichst.\n\n$YYYY-$MM-$DD\nDas Tenhō Ranking Komitee\n",
+      three: "Du bist aufgestiegen zum: SANMA $DAN\n\nLieber/Liebe $UNAME\nTenhō erkennt Deine überragende Leistung und Expertise in diesem Spiel an. Unter Berücksichtigung deiner hervorragenden Spielstatistiken verleihen wir Dir deshalb hiermit den Rang eines $DAN. Wir wünschen uns, dass Du dich in Zukunft noch weiter entwickeln wirst und neue Höhen erreichst.\n\n$YYYY-$MM-$DD\nDas Tenhō Ranking Komitee\n"
+    }
+  };
+
+  // 与官方客户端一致（NINTEI 解析器中的段位表，最高位为「天鳳位」）
+  var RANKS = ["新人", "９級", "８級", "７級", "６級", "５級", "４級", "３級", "２級", "１級",
+    "初段", "二段", "三段", "四段", "五段", "六段", "七段", "八段", "九段", "十段", "天鳳位"];
+  var RANK_HINTS = ["Newcomer", "9-kyu", "8-kyu", "7-kyu", "6-kyu", "5-kyu", "4-kyu", "3-kyu",
+    "2-kyu", "1-kyu", "Shodan", "2-dan", "3-dan", "4-dan", "5-dan", "6-dan", "7-dan", "8-dan",
+    "9-dan", "10-dan", "Tenhou-i"];
+
+  var UI = {
+    ja: {
+      appTitle: "天鳳 認定状ジェネレーター",
+      appSub: "tenhou.net の「認定」昇段ウィンドウを再現",
+      controls: "設定", name: "名前", namePh: "名前を入力", rank: "段位", date: "日付",
+      mode: "対局", four: "四麻", three: "三麻", style: "クライアント",
+      styleV4: "/4/（現行）", styleV3: "/3/（クラシック）", language: "言語",
+      replay: "アニメを再生", export: "PNG 書き出し", preview: "プレビュー",
+      fadeHint: "3.0 秒フェードイン", exportHint: "PNG は 2880 × 2160 px で書き出されます。",
+      note: "「認定」の見出しと段位名は、本家クライアントと同じく日本語表記です。",
+      disclaimer: "非公式のファンツールです。天鳳およびその運営とは関係ありません。",
+      exportError: "PNG の書き出しに失敗しました: "
+    },
+    en: {
+      appTitle: "Tenhou Certificate Generator",
+      appSub: "Recreate the tenhou.net “NINTEI” rank-up window",
+      controls: "Settings", name: "Name", namePh: "Your Tenhou name", rank: "Rank", date: "Date",
+      mode: "Game", four: "4-player", three: "3-player", style: "Client",
+      styleV4: "/4/ (current)", styleV3: "/3/ (classic)", language: "Language",
+      replay: "Replay animation", export: "Export PNG", preview: "Preview",
+      fadeHint: "3.0s fade-in", exportHint: "PNG is exported at 2880 × 2160 px.",
+      note: "The “認定” heading and rank names stay in Japanese, matching the official client.",
+      disclaimer: "Unofficial fan tool. Not affiliated with Tenhou or its operators.",
+      exportError: "PNG export failed: "
+    },
+    zh: {
+      appTitle: "天凤认定状生成器",
+      appSub: "还原 tenhou.net 的「認定」升段窗口",
+      controls: "设置", name: "昵称", namePh: "输入天凤昵称", rank: "段位", date: "日期",
+      mode: "对局", four: "四麻", three: "三麻", style: "客户端",
+      styleV4: "/4/（现行）", styleV3: "/3/（经典）", language: "语言",
+      replay: "重播动画", export: "导出 PNG", preview: "预览",
+      fadeHint: "3.0 秒淡入", exportHint: "PNG 以 2880 × 2160 像素导出。",
+      note: "「認定」标题与段位名和官方客户端一致，固定使用日文表记。",
+      disclaimer: "非官方粉丝工具，与天凤及其运营方无关。",
+      exportError: "PNG 导出失败："
+    },
+    ko: {
+      appTitle: "천봉 인정서 생성기",
+      appSub: "tenhou.net의 「認定」 승단 창 재현",
+      controls: "설정", name: "이름", namePh: "천봉 닉네임", rank: "단위", date: "날짜",
+      mode: "대국", four: "4인", three: "3인", style: "클라이언트",
+      styleV4: "/4/(현행)", styleV3: "/3/(클래식)", language: "언어",
+      replay: "애니메이션 재생", export: "PNG 내보내기", preview: "미리보기",
+      fadeHint: "3.0초 페이드인", exportHint: "PNG는 2880 × 2160 px로 내보내집니다.",
+      note: "「認定」 제목과 단위명은 공식 클라이언트와 동일하게 일본어로 표기됩니다.",
+      disclaimer: "비공식 팬 도구입니다. 천봉 및 운영진과 무관합니다.",
+      exportError: "PNG 내보내기 실패: "
+    },
+    ru: {
+      appTitle: "Генератор сертификатов Tenhou",
+      appSub: "Воссоздание окна повышения «認定» с tenhou.net",
+      controls: "Настройки", name: "Имя", namePh: "Ваше имя в Tenhou", rank: "Ранг", date: "Дата",
+      mode: "Игра", four: "4 игрока", three: "3 игрока", style: "Клиент",
+      styleV4: "/4/ (текущий)", styleV3: "/3/ (классика)", language: "Язык",
+      replay: "Повторить анимацию", export: "Экспорт PNG", preview: "Предпросмотр",
+      fadeHint: "Появление за 3,0 с", exportHint: "PNG экспортируется в 2880 × 2160 px.",
+      note: "Заголовок «認定» и названия рангов остаются на японском, как в официальном клиенте.",
+      disclaimer: "Неофициальный фанатский инструмент. Не связан с Tenhou и её операторами.",
+      exportError: "Не удалось экспортировать PNG: "
+    },
+    fr: {
+      appTitle: "Générateur de certificat Tenhou",
+      appSub: "Reproduire la fenêtre de promotion « 認定 » de tenhou.net",
+      controls: "Réglages", name: "Nom", namePh: "Votre nom Tenhou", rank: "Rang", date: "Date",
+      mode: "Partie", four: "4 joueurs", three: "3 joueurs", style: "Client",
+      styleV4: "/4/ (actuel)", styleV3: "/3/ (classique)", language: "Langue",
+      replay: "Rejouer l’animation", export: "Exporter en PNG", preview: "Aperçu",
+      fadeHint: "Fondu de 3,0 s", exportHint: "Le PNG est exporté en 2880 × 2160 px.",
+      note: "Le titre « 認定 » et les noms de rang restent en japonais, comme dans le client officiel.",
+      disclaimer: "Outil de fan non officiel. Sans affiliation avec Tenhou ni ses opérateurs.",
+      exportError: "Échec de l’export PNG : "
+    },
+    it: {
+      appTitle: "Generatore di certificati Tenhou",
+      appSub: "Ricrea la finestra di promozione «認定» di tenhou.net",
+      controls: "Impostazioni", name: "Nome", namePh: "Il tuo nome Tenhou", rank: "Rango", date: "Data",
+      mode: "Partita", four: "4 giocatori", three: "3 giocatori", style: "Client",
+      styleV4: "/4/ (attuale)", styleV3: "/3/ (classico)", language: "Lingua",
+      replay: "Riproduci animazione", export: "Esporta PNG", preview: "Anteprima",
+      fadeHint: "Dissolvenza 3,0 s", exportHint: "Il PNG viene esportato a 2880 × 2160 px.",
+      note: "Il titolo «認定» e i nomi dei ranghi restano in giapponese, come nel client ufficiale.",
+      disclaimer: "Strumento amatoriale non ufficiale. Non affiliato a Tenhou o ai suoi gestori.",
+      exportError: "Esportazione PNG non riuscita: "
+    },
+    es: {
+      appTitle: "Generador de certificados de Tenhou",
+      appSub: "Recrea la ventana de ascenso «認定» de tenhou.net",
+      controls: "Ajustes", name: "Nombre", namePh: "Tu nombre de Tenhou", rank: "Rango", date: "Fecha",
+      mode: "Partida", four: "4 jugadores", three: "3 jugadores", style: "Cliente",
+      styleV4: "/4/ (actual)", styleV3: "/3/ (clásico)", language: "Idioma",
+      replay: "Repetir animación", export: "Exportar PNG", preview: "Vista previa",
+      fadeHint: "Fundido de 3,0 s", exportHint: "El PNG se exporta a 2880 × 2160 px.",
+      note: "El título «認定» y los nombres de rango permanecen en japonés, como en el cliente oficial.",
+      disclaimer: "Herramienta no oficial. Sin relación con Tenhou ni sus operadores.",
+      exportError: "Error al exportar PNG: "
+    },
+    vi: {
+      appTitle: "Trình tạo chứng nhận Tenhou",
+      appSub: "Tái tạo cửa sổ thăng cấp «認定» của tenhou.net",
+      controls: "Cài đặt", name: "Tên", namePh: "Tên Tenhou của bạn", rank: "Cấp bậc", date: "Ngày",
+      mode: "Ván", four: "4 người", three: "3 người", style: "Giao diện",
+      styleV4: "/4/ (hiện tại)", styleV3: "/3/ (cổ điển)", language: "Ngôn ngữ",
+      replay: "Phát lại hoạt ảnh", export: "Xuất PNG", preview: "Xem trước",
+      fadeHint: "Hiện dần 3,0 giây", exportHint: "PNG được xuất ở 2880 × 2160 px.",
+      note: "Tiêu đề «認定» và tên cấp bậc giữ nguyên tiếng Nhật như bản chính thức.",
+      disclaimer: "Công cụ fan không chính thức. Không liên kết với Tenhou hay nhà vận hành.",
+      exportError: "Xuất PNG thất bại: "
+    },
+    pt: {
+      appTitle: "Gerador de certificados Tenhou",
+      appSub: "Recrie a janela de promoção «認定» do tenhou.net",
+      controls: "Configurações", name: "Nome", namePh: "Seu nome no Tenhou", rank: "Nível", date: "Data",
+      mode: "Partida", four: "4 jogadores", three: "3 jogadores", style: "Cliente",
+      styleV4: "/4/ (atual)", styleV3: "/3/ (clássico)", language: "Idioma",
+      replay: "Reproduzir animação", export: "Exportar PNG", preview: "Visualizar",
+      fadeHint: "Fade-in de 3,0 s", exportHint: "O PNG é exportado em 2880 × 2160 px.",
+      note: "O título «認定» e os nomes de nível permanecem em japonês, como no cliente oficial.",
+      disclaimer: "Ferramenta de fã não oficial. Sem vínculo com o Tenhou ou seus operadores.",
+      exportError: "Falha ao exportar PNG: "
+    },
+    de: {
+      appTitle: "Tenhou-Urkundengenerator",
+      appSub: "Das «認定»-Aufstiegsfenster von tenhou.net nachbilden",
+      controls: "Einstellungen", name: "Name", namePh: "Dein Tenhou-Name", rank: "Rang", date: "Datum",
+      mode: "Spiel", four: "4 Spieler", three: "3 Spieler", style: "Client",
+      styleV4: "/4/ (aktuell)", styleV3: "/3/ (klassisch)", language: "Sprache",
+      replay: "Animation wiederholen", export: "PNG exportieren", preview: "Vorschau",
+      fadeHint: "3,0 s Einblenden", exportHint: "PNG wird mit 2880 × 2160 px exportiert.",
+      note: "Die Überschrift «認定» und die Rangnamen bleiben wie im offiziellen Client auf Japanisch.",
+      disclaimer: "Inoffizielles Fan-Tool. Nicht mit Tenhou oder den Betreibern verbunden.",
+      exportError: "PNG-Export fehlgeschlagen: "
+    }
+  };
+
+  var BODY_FONT = '"Noto Sans CJK JP","Noto Sans JP","Hiragino Sans","Yu Gothic","Meiryo",system-ui,sans-serif';
+  var TITLE_FONT = '"TenhouKai","cwTeX Q Kai T","Yu Mincho","Hiragino Mincho ProN","Noto Serif CJK JP",serif';
+  var KAI_URL = "https://cdn.tenhou.net/3/res/font/cwTeXQKaiT-Medium_20200430.ttf";
+  var EXPORT_W = 1440;
+  var EXPORT_H = 1080;
+  var EXPORT_SCALE = 2;
+  var FADE_MS = 3000;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var stage = $("stage");
+  var cert = $("cert");
+  var certBody = $("certBody");
+  var measureCtx = document.createElement("canvas").getContext("2d");
+
+  var today = new Date();
+  var pad2 = function (n) { return String(n).padStart(2, "0"); };
+  var defaultDate = today.getFullYear() + "-" + pad2(today.getMonth() + 1) + "-" + pad2(today.getDate());
+
+  var state = {
+    lang: detectLang(),
+    name: "NoName",
+    rank: 10,
+    date: defaultDate,
+    three: false,
+    style: "v4"
+  };
+
+  var kaiReady = false;
+  var kaiFace = null;
+
+  function detectLang() {
+    var raw = (navigator.language || "ja").split("-")[0].toLowerCase();
+    if (raw === "jp") return "ja";
+    if (raw === "en") return "en";
+    return LANGS.indexOf(raw) >= 0 ? raw : "en";
+  }
+
+  function t(key) { return UI[state.lang][key]; }
+
+  function ensureFont() {
+    if (kaiReady) return Promise.resolve();
+    if (!kaiFace) {
+      try {
+        kaiFace = new FontFace("TenhouKai", "url(" + KAI_URL + ")");
+        document.fonts.add(kaiFace);
+      } catch (e) {
+        return Promise.resolve();
+      }
+    }
+    return kaiFace.load().then(function () {
+      kaiReady = true;
+    }).catch(function () {
+      /* 字体不可用时回退到 serif */
+    });
+  }
+
+  function currentText() {
+    var tpl = TEMPLATES[state.lang][state.three ? "three" : "four"];
+    var parts = (state.date || defaultDate).split("-");
+    var y = parts[0] || "2020";
+    var m = parts[1] || "10";
+    var d = parts[2] || "10";
+    var name = (state.name || "").trim() || "NoName";
+    var dan = RANKS[state.rank] || RANKS[0];
+    return tpl
+      .replace(/\$UNAME/g, function () { return name; })
+      .replace(/\$DAN/g, function () { return dan; })
+      .replace(/\$YYYY/g, function () { return y; })
+      .replace(/\$MM/g, function () { return m; })
+      .replace(/\$DD/g, function () { return d; })
+      .replace(/\n$/, "");
+  }
+
+  function measure(text, font) {
+    measureCtx.font = font;
+    return measureCtx.measureText(text).width;
+  }
+
+  var CJK_RE = /[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
+
+  function wrapLine(text, maxW, font) {
+    measureCtx.font = font;
+    if (!text || measureCtx.measureText(text).width <= maxW) return [text];
+
+    var tokens = [];
+    var buf = "";
+    Array.from(text).forEach(function (ch) {
+      if (CJK_RE.test(ch) || /\s/.test(ch)) {
+        if (buf) { tokens.push(buf); buf = ""; }
+        tokens.push(ch);
+      } else {
+        buf += ch;
+      }
+    });
+    if (buf) tokens.push(buf);
+
+    var out = [];
+    var cur = "";
+    function push(s) {
+      var trimmed = s.replace(/\s+$/, "");
+      if (trimmed) out.push(trimmed);
+    }
+    tokens.forEach(function (tok) {
+      if (/\s/.test(tok)) {
+        if (cur && measureCtx.measureText(cur + tok).width > maxW) {
+          push(cur); cur = "";
+        } else if (cur) {
+          cur += tok;
+        }
+        return;
+      }
+      if (measureCtx.measureText(cur + tok).width <= maxW) {
+        cur += tok;
+        return;
+      }
+      if (cur) { push(cur); cur = ""; }
+      if (measureCtx.measureText(tok).width <= maxW) {
+        cur = tok;
+        return;
+      }
+      Array.from(tok).forEach(function (ch) {
+        if (cur && measureCtx.measureText(cur + ch).width > maxW) {
+          push(cur); cur = ch;
+        } else {
+          cur += ch;
+        }
+      });
+    });
+    if (cur) push(cur);
+    return out.length ? out : [text];
+  }
+
+  function computeLayout(stageW, text) {
+    var em = stageW * 0.02;
+    var v4 = state.style === "v4";
+    var bodyFont = em + "px " + BODY_FONT;
+    var rawLines = text.split("\n");
+    var maxLine = 0;
+    rawLines.forEach(function (line) {
+      maxLine = Math.max(maxLine, measure(line, bodyFont));
+    });
+
+    var border = 1;
+    var natural = maxLine + em + border * 2;
+    var maxW = stageW * 0.98;
+    var minW = v4 ? stageW * 0.70 : 0;
+    var cardW = Math.min(Math.max(natural, minW), maxW);
+    var contentW = Math.max(cardW - em - border * 2, em * 4);
+    var bodyW = Math.min(maxLine, contentW);
+
+    var lines = [];
+    rawLines.forEach(function (line) {
+      if (!line) { lines.push(""); return; }
+      wrapLine(line, bodyW, bodyFont).forEach(function (l) { lines.push(l); });
+    });
+
+    var titleH = 4 * em;
+    var padT = em;
+    var padB = em;
+    var titleMt = v4 ? 2 * em : 0;
+    var titleMb = v4 ? 3 * em : 0;
+    var wrapMt = v4 ? 2 * em : 0;
+    var innerMt = em;
+    var innerMb = em;
+    var wrapMb = v4 ? em : 0;
+    var buttonH = v4 ? 3 * em : 2 * em;
+    var bodyH = lines.length * em;
+
+    var bodyTop = padT + titleMt + titleH + Math.max(titleMb, wrapMt) + innerMt;
+    var buttonTop = bodyTop + bodyH + innerMb + wrapMb;
+    var cardH = buttonTop + buttonH + padB + border * 2;
+
+    return {
+      em: em, v4: v4, cardW: cardW, cardH: cardH, bodyW: bodyW, maxLine: maxLine,
+      lines: lines, padT: padT, titleMt: titleMt, titleH: titleH,
+      bodyTop: bodyTop, buttonH: buttonH, buttonTop: buttonTop
+    };
+  }
+
+  function renderCert() {
+    var text = currentText();
+    var stageW = stage.clientWidth || 800;
+    var L = computeLayout(stageW, text);
+
+    cert.className = "cert " + (L.v4 ? "style-v4" : "style-v3");
+    cert.style.fontSize = L.em + "px";
+    cert.style.width = L.cardW + "px";
+
+    var title = document.querySelector(".cert .title");
+    title.style.margin = L.v4
+      ? (2 * L.em) + "px 0 " + (3 * L.em) + "px"
+      : "0";
+
+    certBody.style.width = L.bodyW + "px";
+    certBody.replaceChildren();
+    L.lines.forEach(function (line) {
+      var div = document.createElement("div");
+      div.className = "line";
+      div.textContent = line;
+      certBody.appendChild(div);
+    });
+  }
+
+  function playFade() {
+    cert.style.transition = "none";
+    cert.style.opacity = "0";
+    void cert.offsetWidth;
+    requestAnimationFrame(function () {
+      cert.style.transition = "opacity " + FADE_MS + "ms ease-out";
+      cert.style.opacity = "1";
+    });
+  }
+
+  function showInstant() {
+    cert.style.transition = "none";
+    cert.style.opacity = "1";
+  }
+
+  function applyUI() {
+    var u = UI[state.lang];
+    document.documentElement.lang = state.lang;
+    document.title = u.appTitle;
+    $("appTitle").textContent = u.appTitle;
+    $("appSub").textContent = u.appSub;
+    $("ctrlTitle").textContent = u.controls;
+    $("lblName").textContent = u.name;
+    $("lblRank").textContent = u.rank;
+    $("lblDate").textContent = u.date;
+    $("lblMode").textContent = u.mode;
+    $("lblFour").textContent = u.four;
+    $("lblThree").textContent = u.three;
+    $("lblStyle").textContent = u.style;
+    $("optV4").textContent = u.styleV4;
+    $("optV3").textContent = u.styleV3;
+    $("langLabel").textContent = u.language;
+    $("replayBtn").textContent = u.replay;
+    $("exportBtn").textContent = u.export;
+    $("lblPreview").textContent = u.preview;
+    $("fadeHint").textContent = u.fadeHint;
+    $("exportHint").textContent = u.exportHint;
+    $("note").textContent = u.note;
+    $("disclaimer").textContent = u.disclaimer;
+    $("nameInput").placeholder = u.namePh;
+    $("langSelect").value = state.lang;
+    rebuildRanks();
+  }
+
+  function rebuildRanks() {
+    var sel = $("rankSelect");
+    var showHint = state.lang !== "ja" && state.lang !== "zh";
+    sel.replaceChildren();
+    RANKS.forEach(function (rank, i) {
+      var opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = showHint ? rank + " — " + RANK_HINTS[i] : rank;
+      sel.appendChild(opt);
+    });
+    sel.value = String(state.rank);
+  }
+
+  function syncInputs() {
+    $("nameInput").value = state.name;
+    $("dateInput").value = state.date;
+    $("styleSelect").value = state.style;
+    var radios = document.querySelectorAll('input[name="mode"]');
+    radios.forEach(function (r) { r.checked = (r.value === "three") === state.three; });
+    $("rankSelect").value = String(state.rank);
+  }
+
+  function download(blob, filename) {
+    var a = document.createElement("a");
+    var url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function drawCert(ctx, W, H, L) {
+    var em = L.em;
+    var v4 = L.v4;
+    var cardX = (W - L.cardW) / 2;
+    var cardY = (H - L.cardH) / 2;
+    var border = 1;
+    var innerX = cardX + border;
+    var innerY = cardY + border;
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = v4 ? "rgba(0,0,0,0.90)" : "rgba(0,0,0,0.85)";
+    ctx.fillRect(cardX, cardY, L.cardW, L.cardH);
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = border;
+    ctx.strokeRect(cardX + 0.5, cardY + 0.5, L.cardW - 1, L.cardH - 1);
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = 4 * em + "px " + TITLE_FONT;
+    var titleY = innerY + L.padT + L.titleMt + L.titleH / 2;
+    ctx.fillText("認定", innerX + L.cardW / 2, titleY);
+
+    ctx.font = em + "px " + BODY_FONT;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    var bodyX = innerX + (L.cardW - L.bodyW) / 2;
+    var y = innerY + L.bodyTop;
+    L.lines.forEach(function (line) {
+      if (line) ctx.fillText(line, bodyX, y + em / 2);
+      y += em;
+    });
+
+    var btnW = v4 ? 8 * em : measure("OK", em + "px " + BODY_FONT) + 4 * em;
+    var btnX = innerX + (L.cardW - btnW) / 2;
+    var btnY = innerY + L.buttonTop;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (v4) {
+      var grad = ctx.createLinearGradient(0, btnY, 0, btnY + L.buttonH);
+      grad.addColorStop(0, "rgba(0,0,0,0.7)");
+      grad.addColorStop(0.5, "rgba(107,107,107,0.5)");
+      grad.addColorStop(0.5, "rgba(31,31,31,0.5)");
+      grad.addColorStop(1, "rgba(0,0,0,0.7)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(btnX, btnY, btnW, L.buttonH);
+      ctx.strokeStyle = "#444";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, L.buttonH - 1);
+      ctx.font = em + "px " + BODY_FONT;
+      ctx.fillStyle = "#fff";
+      ctx.shadowColor = "#000";
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1;
+      ctx.shadowBlur = 1;
+      ctx.fillText("OK", btnX + btnW / 2, btnY + L.buttonH / 2);
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+    } else {
+      ctx.fillStyle = "#efefef";
+      ctx.fillRect(btnX, btnY, btnW, L.buttonH);
+      ctx.strokeStyle = "#999";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, L.buttonH - 1);
+      ctx.font = em + "px " + BODY_FONT;
+      ctx.fillStyle = "#000";
+      ctx.fillText("OK", btnX + btnW / 2, btnY + L.buttonH / 2);
+    }
+  }
+
+  function makeExportCanvas() {
+    var W = EXPORT_W;
+    var H = EXPORT_H;
+    var L = computeLayout(W, currentText());
+    var canvas = document.createElement("canvas");
+    canvas.width = W * EXPORT_SCALE;
+    canvas.height = H * EXPORT_SCALE;
+    var ctx = canvas.getContext("2d");
+    ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+    drawCert(ctx, W, H, L);
+    return canvas;
+  }
+
+  function exportPNG() {
+    var btn = $("exportBtn");
+    btn.disabled = true;
+    ensureFont().then(function () {
+      try {
+        var canvas = makeExportCanvas();
+        canvas.toBlob(function (blob) {
+          if (!blob) throw new Error("toBlob returned null");
+          download(blob, "tenhou-nintei-" + state.lang + "-" + (state.date || defaultDate).replace(/-/g, "") + ".png");
+          btn.disabled = false;
+        }, "image/png");
+      } catch (err) {
+        btn.disabled = false;
+        alert(t("exportError") + err.message);
+      }
+    }).catch(function (err) {
+      btn.disabled = false;
+      alert(t("exportError") + (err && err.message ? err.message : err));
+    });
+  }
+
+  function bindEvents() {
+    $("langSelect").addEventListener("change", function (e) {
+      state.lang = e.target.value;
+      applyUI();
+      syncInputs();
+      renderCert();
+      showInstant();
+    });
+
+    $("nameInput").addEventListener("input", function (e) {
+      state.name = e.target.value;
+      renderCert();
+      showInstant();
+    });
+
+    $("rankSelect").addEventListener("change", function (e) {
+      state.rank = Number(e.target.value) || 0;
+      renderCert();
+      showInstant();
+    });
+
+    $("dateInput").addEventListener("change", function (e) {
+      state.date = e.target.value || defaultDate;
+      renderCert();
+      showInstant();
+    });
+
+    document.querySelectorAll('input[name="mode"]').forEach(function (radio) {
+      radio.addEventListener("change", function (e) {
+        state.three = e.target.value === "three";
+        renderCert();
+        showInstant();
+      });
+    });
+
+    $("styleSelect").addEventListener("change", function (e) {
+      state.style = e.target.value === "v3" ? "v3" : "v4";
+      renderCert();
+      showInstant();
+    });
+
+    $("replayBtn").addEventListener("click", playFade);
+    $("exportBtn").addEventListener("click", exportPNG);
+    $("certOk").addEventListener("click", function (e) { e.preventDefault(); });
+
+    if (window.ResizeObserver) {
+      var raf = null;
+      new ResizeObserver(function () {
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(function () {
+          renderCert();
+        });
+      }).observe(stage);
+    }
+  }
+
+  function init() {
+    var langSel = $("langSelect");
+    LANGS.forEach(function (code) {
+      var opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = LANG_LABEL[code];
+      langSel.appendChild(opt);
+    });
+
+    applyUI();
+    syncInputs();
+    renderCert();
+    bindEvents();
+    setTimeout(playFade, 100);
+
+    ensureFont().then(function () {
+      renderCert();
+    });
+  }
+
+  // 供调试 / 自动化测试使用
+  window.__tenhouNintei = {
+    render: renderCert,
+    exportDataURL: function () {
+      return ensureFont().then(function () {
+        return makeExportCanvas().toDataURL("image/png");
+      });
+    },
+    state: state
+  };
+
+  init();
+})();
+</script>
+</body>
+</html>
