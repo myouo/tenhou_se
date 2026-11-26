@@ -4,13 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>天鳳 認定状ジェネレーター</title>
-<meta name="description" content="Tenhou 認定状（昇段窗口）生成器：输入昵称、段位、日期，还原 tenhou.net 的「認定」窗口，支持官方 10 种语言与 PNG 导出。" />
+<meta name="description" content="Tenhou 認定状（昇段窗口）生成器：输入昵称、段位、日期，还原 tenhou.net 的「認定」窗口，支持官方 10 种语言、官方背景预设与自定义背景上传，可导出 PNG。" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2311141b'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%23f3e6c8' font-family='serif'%3E%E8%AA%8D%3C/text%3E%3C/svg%3E" />
 <style>
   :root {
     --kai: "TenhouKai", "cwTeX Q Kai T", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif CJK JP", serif;
     --bodyFont: "Noto Sans CJK JP", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif;
-    --bg: #0b0d12;
     --panel: rgba(23, 26, 33, 0.88);
     --line: #262b36;
     --line-2: #303747;
@@ -90,13 +89,15 @@
   .langPick select { width: auto; min-width: 9.5em; min-height: 34px; padding: 6px 10px; }
   main {
     display: grid;
-    grid-template-columns: 322px minmax(0, 1fr);
+    grid-template-columns: 340px minmax(0, 1fr);
     gap: 22px;
     align-items: start;
   }
   .panel {
     position: sticky;
     top: 20px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 15px;
@@ -106,6 +107,8 @@
     background: var(--panel);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(8px);
+    scrollbar-width: thin;
+    scrollbar-color: #333b4b transparent;
   }
   .panel h2 {
     margin: 0 0 2px;
@@ -158,6 +161,42 @@
     color: #fff;
     box-shadow: inset 0 0 0 1px #3a4152;
   }
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch {
+    width: 42px;
+    height: 31px;
+    padding: 0;
+    border: 1px solid #3a4152;
+    border-radius: 7px;
+    background-color: #000;
+    background-size: cover;
+    background-position: center;
+    cursor: pointer;
+    transition: outline 0.12s, border-color 0.12s, transform 0.05s;
+  }
+  .swatch:active { transform: translateY(1px); }
+  .swatch.active { outline: 2px solid var(--gold); outline-offset: 2px; border-color: transparent; }
+  .swatch-none { background: #000; box-shadow: inset 0 0 0 1px #2b3140; }
+  .bgActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .mini {
+    padding: 6px 10px;
+    border: 1px solid #303747;
+    border-radius: 8px;
+    background: #1a1f29;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mini:hover { background: #222838; }
+  .mini.active { border-color: #b98d3e; box-shadow: inset 0 0 0 1px #b98d3e; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aab2c3; cursor: pointer; }
+  .chk input { accent-color: #c79a42; width: 14px; height: 14px; }
+  .bgName {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #7f8798;
+    word-break: break-all;
+  }
   .actions { display: flex; gap: 10px; margin-top: 4px; }
   .btn {
     flex: 1;
@@ -180,7 +219,7 @@
   }
   .btn.primary:hover { filter: brightness(1.06); }
   .btn:disabled { opacity: 0.5; cursor: wait; filter: none; }
-  .note { margin: 2px 0 0; font-size: 11.5px; line-height: 1.65; color: var(--muted-2); }
+  .note { margin: 0; font-size: 11.5px; line-height: 1.65; color: var(--muted-2); }
   .preview { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .previewHead {
     display: flex;
@@ -214,7 +253,10 @@
     aspect-ratio: 4 / 3;
     overflow: hidden;
     border-radius: 10px;
-    background: #000;
+    background-color: #000;
+    background-position: center center;
+    background-size: cover;
+    background-repeat: no-repeat;
     box-shadow: inset 0 0 0 1px #1b1f27, 0 20px 60px rgba(0, 0, 0, 0.55);
   }
   .cert {
@@ -233,7 +275,8 @@
   .cert.style-v4 {
     padding: 1em 0;
     border: 1px solid #444;
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.90);
+    min-width: 70%;
   }
   .cert.style-v3 {
     padding: 1em 0.5em;
@@ -246,7 +289,6 @@
     font-weight: 400;
     line-height: 1;
   }
-  /* 标题 margin 在 JS 中按基础字号写 px（本家 n[4].style.margin = 2*b / 3*b） */
   .cert .bodyWrap { margin: 0; }
   .cert.style-v4 .bodyWrap { margin: 2em 0.5em 1em; }
   .cert .bodyText {
@@ -260,13 +302,14 @@
     line-height: 1;
     white-space: pre;
   }
-  .cert .ok { margin: 0; font-family: var(--bodyFont); font-size: 1em; cursor: default; }
+  .cert .ok { margin: 0; font-family: var(--bodyFont); white-space: nowrap; cursor: default; }
   .cert.style-v4 .ok {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 8em;
     height: 3em;
+    font-size: 1em;
     border: 1px solid #444;
     color: #fff;
     background: linear-gradient(
@@ -281,10 +324,17 @@
   }
   .cert.style-v3 .ok {
     height: 2em;
+    font-size: 175%;
     padding: 0 2em;
-    border: 2px outset #d6d6d6;
-    background: #efefef;
-    color: #000;
+    border: 1px solid #444;
+    color: #fff;
+    background: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.4) 0%,
+      rgba(167, 147, 127, 0.4) 50%,
+      rgba(31, 31, 31, 0.4) 51%,
+      rgba(0, 0, 0, 0.4) 100%
+    );
   }
   .hint { margin: 0; font-size: 11.5px; color: var(--muted-2); }
   footer {
@@ -296,7 +346,7 @@
   }
   @media (max-width: 940px) {
     main { grid-template-columns: 1fr; }
-    .panel { position: static; }
+    .panel { position: static; max-height: none; overflow: visible; }
     .brandText p { display: none; }
   }
   @media (max-width: 560px) {
@@ -330,10 +380,12 @@
         <input id="nameInput" type="text" maxlength="24" autocomplete="off" spellcheck="false" value="NoName" />
       </label>
 
-      <label class="field">
+      <div class="field">
         <span id="lblRank">段位</span>
-        <select id="rankSelect"></select>
-      </label>
+        <input id="rankInput" type="text" list="rankList" maxlength="48" autocomplete="off" spellcheck="false" />
+        <datalist id="rankList"></datalist>
+        <p class="note" id="rankNote"></p>
+      </div>
 
       <label class="field">
         <span id="lblDate">日付</span>
@@ -361,6 +413,22 @@
           <option value="v3" id="optV3">/3/</option>
         </select>
       </label>
+
+      <div class="field">
+        <span id="lblBackground">背景</span>
+        <div class="swatches" id="swatches"></div>
+        <div class="bgActions">
+          <button id="uploadBgBtn" class="mini" type="button">画像をアップロード</button>
+          <button id="resetBgBtn" class="mini" type="button">初期化</button>
+          <label class="chk">
+            <input type="checkbox" id="vignetteChk" checked />
+            <span id="lblVignette">ビネット</span>
+          </label>
+        </div>
+        <input type="file" id="bgFile" accept="image/*" hidden />
+        <div class="bgName" id="bgName"></div>
+        <p class="note" id="bgNote"></p>
+      </div>
 
       <div class="actions">
         <button id="replayBtn" class="btn ghost" type="button">アニメを再生</button>
@@ -465,10 +533,15 @@
       mode: "対局", four: "四麻", three: "三麻", style: "クライアント",
       styleV4: "/4/（現行）", styleV3: "/3/（クラシック）", language: "言語",
       replay: "アニメを再生", export: "PNG 書き出し", preview: "プレビュー",
-      fadeHint: "3.0 秒フェードイン", exportHint: "PNG は 2880 × 2160 px で書き出されます。",
-      note: "「認定」の見出しと段位名は、本家クライアントと同じく日本語表記です。",
+      fadeHint: "3.0 秒フェードイン", exportHint: "PNG は 2880 × 2160 px で書き出されます（背景込み）。",
+      note: "「認定」の見出しは本家同様に日本語表記です。段位テキストは自由に編集できます。",
       disclaimer: "非公式のファンツールです。天鳳およびその運営とは関係ありません。",
-      exportError: "PNG の書き出しに失敗しました: "
+      exportError: "PNG の書き出しに失敗しました: ",
+      background: "背景", tenhouPreset: "天鳳プリセット", noneColor: "黒", custom: "カスタム",
+      upload: "画像をアップロード", resetBg: "初期化", vignette: "ビネット",
+      rankPh: "任意の段位テキスト", rankNote: "段位テキストは自由に編集でき、そのまま認定状に反映されます。",
+      bgNote: "天鳳公式の背景プリセットを使用します。自分の画像もアップロードできます。",
+      bgError: "画像を読み込めませんでした: "
     },
     en: {
       appTitle: "Tenhou Certificate Generator",
@@ -477,10 +550,15 @@
       mode: "Game", four: "4-player", three: "3-player", style: "Client",
       styleV4: "/4/ (current)", styleV3: "/3/ (classic)", language: "Language",
       replay: "Replay animation", export: "Export PNG", preview: "Preview",
-      fadeHint: "3.0s fade-in", exportHint: "PNG is exported at 2880 × 2160 px.",
-      note: "The “認定” heading and rank names stay in Japanese, matching the official client.",
+      fadeHint: "3.0s fade-in", exportHint: "PNG is exported at 2880 × 2160 px, including the background.",
+      note: "The “認定” heading stays in Japanese, matching the official client. Rank text is editable.",
       disclaimer: "Unofficial fan tool. Not affiliated with Tenhou or its operators.",
-      exportError: "PNG export failed: "
+      exportError: "PNG export failed: ",
+      background: "Background", tenhouPreset: "Tenhou preset", noneColor: "Black", custom: "Custom",
+      upload: "Upload image", resetBg: "Reset", vignette: "Vignette",
+      rankPh: "Any rank text", rankNote: "The rank text is editable and used verbatim in the certificate.",
+      bgNote: "Uses Tenhou's official background presets. You can also upload your own image.",
+      bgError: "Could not load image: "
     },
     zh: {
       appTitle: "天凤认定状生成器",
@@ -489,10 +567,15 @@
       mode: "对局", four: "四麻", three: "三麻", style: "客户端",
       styleV4: "/4/（现行）", styleV3: "/3/（经典）", language: "语言",
       replay: "重播动画", export: "导出 PNG", preview: "预览",
-      fadeHint: "3.0 秒淡入", exportHint: "PNG 以 2880 × 2160 像素导出。",
-      note: "「認定」标题与段位名和官方客户端一致，固定使用日文表记。",
+      fadeHint: "3.0 秒淡入", exportHint: "PNG 以 2880 × 2160 像素导出（含背景）。",
+      note: "「認定」标题与官方客户端一致，使用日文；段位文本可自由编辑。",
       disclaimer: "非官方粉丝工具，与天凤及其运营方无关。",
-      exportError: "PNG 导出失败："
+      exportError: "PNG 导出失败：",
+      background: "背景", tenhouPreset: "天凤预设", noneColor: "纯黑", custom: "自定义",
+      upload: "上传图片", resetBg: "恢复默认", vignette: "暗角",
+      rankPh: "可输入任意段位", rankNote: "段位文本可自由编辑，会原样写入认定状。",
+      bgNote: "默认使用天凤官方背景预设，也可上传自己的图片。",
+      bgError: "图片加载失败："
     },
     ko: {
       appTitle: "천봉 인정서 생성기",
@@ -501,8 +584,8 @@
       mode: "대국", four: "4인", three: "3인", style: "클라이언트",
       styleV4: "/4/(현행)", styleV3: "/3/(클래식)", language: "언어",
       replay: "애니메이션 재생", export: "PNG 내보내기", preview: "미리보기",
-      fadeHint: "3.0초 페이드인", exportHint: "PNG는 2880 × 2160 px로 내보내집니다.",
-      note: "「認定」 제목과 단위명은 공식 클라이언트와 동일하게 일본어로 표기됩니다.",
+      fadeHint: "3.0초 페이드인", exportHint: "PNG는 2880 × 2160 px로 내보내집니다(배경 포함).",
+      note: "「認定」 제목은 공식 클라이언트와 동일하게 일본어로 표기됩니다. 단위 텍스트는 자유롭게 편집할 수 있습니다.",
       disclaimer: "비공식 팬 도구입니다. 천봉 및 운영진과 무관합니다.",
       exportError: "PNG 내보내기 실패: "
     },
@@ -513,8 +596,8 @@
       mode: "Игра", four: "4 игрока", three: "3 игрока", style: "Клиент",
       styleV4: "/4/ (текущий)", styleV3: "/3/ (классика)", language: "Язык",
       replay: "Повторить анимацию", export: "Экспорт PNG", preview: "Предпросмотр",
-      fadeHint: "Появление за 3,0 с", exportHint: "PNG экспортируется в 2880 × 2160 px.",
-      note: "Заголовок «認定» и названия рангов остаются на японском, как в официальном клиенте.",
+      fadeHint: "Появление за 3,0 с", exportHint: "PNG экспортируется в 2880 × 2160 px вместе с фоном.",
+      note: "Заголовок «認定» остаётся на японском, как в официальном клиенте. Текст ранга можно редактировать.",
       disclaimer: "Неофициальный фанатский инструмент. Не связан с Tenhou и её операторами.",
       exportError: "Не удалось экспортировать PNG: "
     },
@@ -525,8 +608,8 @@
       mode: "Partie", four: "4 joueurs", three: "3 joueurs", style: "Client",
       styleV4: "/4/ (actuel)", styleV3: "/3/ (classique)", language: "Langue",
       replay: "Rejouer l’animation", export: "Exporter en PNG", preview: "Aperçu",
-      fadeHint: "Fondu de 3,0 s", exportHint: "Le PNG est exporté en 2880 × 2160 px.",
-      note: "Le titre « 認定 » et les noms de rang restent en japonais, comme dans le client officiel.",
+      fadeHint: "Fondu de 3,0 s", exportHint: "Le PNG est exporté en 2880 × 2160 px, fond compris.",
+      note: "Le titre « 認定 » reste en japonais, comme dans le client officiel. Le texte du rang est modifiable.",
       disclaimer: "Outil de fan non officiel. Sans affiliation avec Tenhou ni ses opérateurs.",
       exportError: "Échec de l’export PNG : "
     },
@@ -537,8 +620,8 @@
       mode: "Partita", four: "4 giocatori", three: "3 giocatori", style: "Client",
       styleV4: "/4/ (attuale)", styleV3: "/3/ (classico)", language: "Lingua",
       replay: "Riproduci animazione", export: "Esporta PNG", preview: "Anteprima",
-      fadeHint: "Dissolvenza 3,0 s", exportHint: "Il PNG viene esportato a 2880 × 2160 px.",
-      note: "Il titolo «認定» e i nomi dei ranghi restano in giapponese, come nel client ufficiale.",
+      fadeHint: "Dissolvenza 3,0 s", exportHint: "Il PNG viene esportato a 2880 × 2160 px, sfondo incluso.",
+      note: "Il titolo «認定» resta in giapponese, come nel client ufficiale. Il testo del rango è modificabile.",
       disclaimer: "Strumento amatoriale non ufficiale. Non affiliato a Tenhou o ai suoi gestori.",
       exportError: "Esportazione PNG non riuscita: "
     },
@@ -549,8 +632,8 @@
       mode: "Partida", four: "4 jugadores", three: "3 jugadores", style: "Cliente",
       styleV4: "/4/ (actual)", styleV3: "/3/ (clásico)", language: "Idioma",
       replay: "Repetir animación", export: "Exportar PNG", preview: "Vista previa",
-      fadeHint: "Fundido de 3,0 s", exportHint: "El PNG se exporta a 2880 × 2160 px.",
-      note: "El título «認定» y los nombres de rango permanecen en japonés, como en el cliente oficial.",
+      fadeHint: "Fundido de 3,0 s", exportHint: "El PNG se exporta a 2880 × 2160 px, con el fondo incluido.",
+      note: "El título «認定» permanece en japonés, como en el cliente oficial. El texto del rango es editable.",
       disclaimer: "Herramienta no oficial. Sin relación con Tenhou ni sus operadores.",
       exportError: "Error al exportar PNG: "
     },
@@ -561,8 +644,8 @@
       mode: "Ván", four: "4 người", three: "3 người", style: "Giao diện",
       styleV4: "/4/ (hiện tại)", styleV3: "/3/ (cổ điển)", language: "Ngôn ngữ",
       replay: "Phát lại hoạt ảnh", export: "Xuất PNG", preview: "Xem trước",
-      fadeHint: "Hiện dần 3,0 giây", exportHint: "PNG được xuất ở 2880 × 2160 px.",
-      note: "Tiêu đề «認定» và tên cấp bậc giữ nguyên tiếng Nhật như bản chính thức.",
+      fadeHint: "Hiện dần 3,0 giây", exportHint: "PNG được xuất ở 2880 × 2160 px, gồm cả nền.",
+      note: "Tiêu đề «認定» giữ nguyên tiếng Nhật như bản chính thức. Nội dung cấp bậc có thể chỉnh sửa.",
       disclaimer: "Công cụ fan không chính thức. Không liên kết với Tenhou hay nhà vận hành.",
       exportError: "Xuất PNG thất bại: "
     },
@@ -573,8 +656,8 @@
       mode: "Partida", four: "4 jogadores", three: "3 jogadores", style: "Cliente",
       styleV4: "/4/ (atual)", styleV3: "/3/ (clássico)", language: "Idioma",
       replay: "Reproduzir animação", export: "Exportar PNG", preview: "Visualizar",
-      fadeHint: "Fade-in de 3,0 s", exportHint: "O PNG é exportado em 2880 × 2160 px.",
-      note: "O título «認定» e os nomes de nível permanecem em japonês, como no cliente oficial.",
+      fadeHint: "Fade-in de 3,0 s", exportHint: "O PNG é exportado em 2880 × 2160 px, incluindo o fundo.",
+      note: "O título «認定» permanece em japonês, como no cliente oficial. O texto do nível é editável.",
       disclaimer: "Ferramenta de fã não oficial. Sem vínculo com o Tenhou ou seus operadores.",
       exportError: "Falha ao exportar PNG: "
     },
@@ -585,16 +668,34 @@
       mode: "Spiel", four: "4 Spieler", three: "3 Spieler", style: "Client",
       styleV4: "/4/ (aktuell)", styleV3: "/3/ (klassisch)", language: "Sprache",
       replay: "Animation wiederholen", export: "PNG exportieren", preview: "Vorschau",
-      fadeHint: "3,0 s Einblenden", exportHint: "PNG wird mit 2880 × 2160 px exportiert.",
-      note: "Die Überschrift «認定» und die Rangnamen bleiben wie im offiziellen Client auf Japanisch.",
+      fadeHint: "3,0 s Einblenden", exportHint: "PNG wird mit 2880 × 2160 px inklusive Hintergrund exportiert.",
+      note: "Die Überschrift «認定» bleibt wie im offiziellen Client auf Japanisch. Der Rangtext ist editierbar.",
       disclaimer: "Inoffizielles Fan-Tool. Nicht mit Tenhou oder den Betreibern verbunden.",
       exportError: "PNG-Export fehlgeschlagen: "
     }
   };
 
+  var COLOR_NAMES = {
+    ja: ["青", "紫", "桃", "赤", "橙", "黄", "緑"],
+    zh: ["蓝", "紫", "粉", "红", "橙", "黄", "绿"],
+    en: ["Blue", "Purple", "Pink", "Red", "Orange", "Yellow", "Green"]
+  };
+
   var BODY_FONT = '"Noto Sans CJK JP","Noto Sans JP","Hiragino Sans","Yu Gothic","Meiryo",system-ui,sans-serif';
   var TITLE_FONT = '"TenhouKai","cwTeX Q Kai T","Yu Mincho","Hiragino Mincho ProN","Noto Serif CJK JP",serif';
   var KAI_URL = "https://cdn.tenhou.net/3/res/font/cwTeXQKaiT-Medium_20200430.ttf";
+  var VIGNETTE_URL = "https://cdn.tenhou.net/4/res/img/1/_bg9_1024x0768_080000.png";
+  var BG_BASE_PREFIX = "https://cdn.tenhou.net/4/res/img/3/_bg0_1024x0768_";
+  var BG_PRESETS = [
+    { code: "000100100", color: 0 },
+    { code: "040100100", color: 1 },
+    { code: "080100100", color: 2 },
+    { code: "120100100", color: 3 },
+    { code: "160100100", color: 4 },
+    { code: "200100100", color: 5 },
+    { code: "240100100", color: 6 }
+  ];
+  var DEFAULT_BG = "000100100";
   var EXPORT_W = 1440;
   var EXPORT_H = 1080;
   var EXPORT_SCALE = 2;
@@ -613,14 +714,19 @@
   var state = {
     lang: detectLang(),
     name: "NoName",
-    rank: 10,
+    rankText: "初段",
     date: defaultDate,
     three: false,
-    style: "v4"
+    style: "v4",
+    bgMode: "preset",
+    bgPreset: DEFAULT_BG,
+    vignette: true,
+    customBg: null
   };
 
   var kaiReady = false;
   var kaiFace = null;
+  var imgCache = new Map();
 
   function detectLang() {
     var raw = (navigator.language || "ja").split("-")[0].toLowerCase();
@@ -629,7 +735,16 @@
     return LANGS.indexOf(raw) >= 0 ? raw : "en";
   }
 
-  function t(key) { return UI[state.lang][key]; }
+  function t(key) {
+    var lang = UI[state.lang] || UI.en;
+    if (lang && lang[key] !== undefined) return lang[key];
+    return UI.en[key] !== undefined ? UI.en[key] : key;
+  }
+
+  function colorName(i) {
+    var names = COLOR_NAMES[state.lang] || COLOR_NAMES.en;
+    return names[i] || COLOR_NAMES.en[i] || String(i);
+  }
 
   function ensureFont() {
     if (kaiReady) return Promise.resolve();
@@ -655,7 +770,7 @@
     var m = parts[1] || "10";
     var d = parts[2] || "10";
     var name = (state.name || "").trim() || "NoName";
-    var dan = RANKS[state.rank] || RANKS[0];
+    var dan = (state.rankText || "").trim() || "初段";
     return tpl
       .replace(/\$UNAME/g, function () { return name; })
       .replace(/\$DAN/g, function () { return dan; })
@@ -670,7 +785,7 @@
     return measureCtx.measureText(text).width;
   }
 
-  var CJK_RE = /[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
+  var CJK_RE = /[　-ヿ㐀-䶿一-鿿豈-﫿＀-￯]/;
 
   function wrapLine(text, maxW, font) {
     measureCtx.font = font;
@@ -724,66 +839,142 @@
     return out.length ? out : [text];
   }
 
-  function computeLayout(stageW, text) {
-    var em = stageW * 0.02;
+  // 移植自 /3/ latest.js 的 Q.ca（hc.a=2, e=0）：算出游戏区尺寸与侧边缩进
+  function computeV3Geometry(boardW, boardH) {
+    var a = { I: [0, 0, 0, 0, 0, 0, 0, 0], J: [0, 0, 0, 0, 0, 0, 0, 0], Y: [0, 0, 0, 0, 0, 0, 0, 0], zd: 0 };
+    var f = 0;
+    var m = 0;
+    var HCA = 2;
+    var E = 0;
+    function c() {
+      var b = a.I, k = a.J, d = a.Y;
+      b[1] = Math.trunc(2360 * b[0] / 31 / 56);
+      d[0] = d[1] = d[4] = Math.min(Math.trunc(12 * b[0] / 31), Math.trunc(12 * b[1] / 40));
+      k[0] = k[4] = Math.trunc(47 * b[0] / 31) - d[0];
+      k[1] = Math.trunc(37 * b[1] / 40) - d[1];
+      if (b[4] !== b[0]) {
+        d[4] = Math.trunc(12 * b[4] / 31);
+        k[4] = Math.trunc(47 * b[4] / 31) - d[4];
+      }
+      b[2] = b[6] = b[0]; d[2] = d[6] = d[0]; k[2] = k[6] = k[0];
+      b[3] = b[1]; d[3] = d[1]; k[3] = k[1];
+      b[5] = b[7] = Math.trunc(380 * k[1] / 460);
+      d[5] = d[7] = Math.trunc(44 * b[5] / 19) - k[1];
+      k[5] = k[7] = k[1];
+      var h = 2 * k[1], n = 2 * b[0];
+      f = m = 0;
+      if (HCA === 1 || HCA === 3) {
+        f = Math.max(f, n + 17 * b[0] + 2 * b[1] + n);
+        m = Math.max(m, h + 17 * k[1] + 2 * k[0] + d[0] + k[4] + d[4] + (E ? k[1] : 0));
+      } else {
+        f = Math.max(f, n + 3 * b[1] + 6 * b[0] + 3 * b[1] + n);
+        m = Math.max(m, h + 3 * k[0] + 6 * k[1] + 3 * k[0] + d[0] + k[4] + d[4] + (E ? k[1] : 0));
+      }
+      f = Math.max(f, Math.trunc(14.1 * b[4]) + b[0]);
+      a.zd = k[7] + d[7] - (k[3] + d[3]);
+      m = Math.max(m, Math.trunc(2.1 * k[1]) + a.zd + 4 * (2 * k[1] + k[0]) + k[1] + d[1] + k[4] + d[4]);
+      m = Math.max(m, k[0] + 4 * (2 * k[1] + k[0]) + Math.trunc(2.1 * k[1]) + a.zd + 2 * k[1] + d[1] + (E ? k[1] : 0));
+      return f <= boardW && m <= boardH;
+    }
+    var b = a.I, k = a.J, d = a.Y;
+    for (b[0] = 200; b[0] > 10; --b[0]) {
+      b[4] = Math.trunc(31 * (2 * k[1] + d[0]) / 47);
+      if (c()) break;
+      b[4] = Math.trunc((boardW - b[0]) / 14.1);
+      if (c()) break;
+    }
+    b[4] = Math.trunc((boardW - b[0]) / 14.1);
+    for (b[4] = Math.min(b[4], Math.trunc(1.7 * b[0])); b[4] > 10 && !c(); --b[4]) { /* shrink */ }
+    if (boardH - m < boardW - f) m = Math.trunc(boardH);
+    else f = Math.trunc(boardW);
+    return { playW: f, playH: m, inset: a.I[1] };
+  }
+
+  function computeLayout(stageW, stageH, text) {
     var v4 = state.style === "v4";
-    var bodyFont = em + "px " + BODY_FONT;
+    var em, cardW, contentW, maxLine, bodyW, lines, titleH, titleMt, titleMb, wrapMt;
+    var innerMt, innerMb, wrapMb, buttonH, bodyH, bodyTop, buttonTop, cardH;
     var rawLines = text.split("\n");
-    var maxLine = 0;
-    rawLines.forEach(function (line) {
-      maxLine = Math.max(maxLine, measure(line, bodyFont));
-    });
+    var bodyFont;
 
-    var border = 1;
-    var natural = maxLine + em + border * 2;
-    var maxW = stageW * 0.98;
-    var minW = v4 ? stageW * 0.70 : 0;
-    var cardW = Math.min(Math.max(natural, minW), maxW);
-    var contentW = Math.max(cardW - em - border * 2, em * 4);
-    var bodyW = Math.min(maxLine, contentW);
+    if (v4) {
+      em = stageW * 0.02;
+      cardW = stageW * 0.70;
+      contentW = Math.max(cardW - em - 2, em * 4);
+      bodyFont = em + "px " + BODY_FONT;
+      maxLine = 0;
+      rawLines.forEach(function (line) { maxLine = Math.max(maxLine, measure(line, bodyFont)); });
+      bodyW = Math.min(maxLine, contentW);
+      lines = wrapAll(rawLines, bodyW, bodyFont);
+      titleH = 4 * em;
+      titleMt = 2 * em;
+      titleMb = 3 * em;
+      wrapMt = 2 * em;
+      innerMt = em;
+      innerMb = em;
+      wrapMb = em;
+      buttonH = 3 * em;
+      bodyH = lines.length * em;
+      bodyTop = em + titleMt + titleH + Math.max(titleMb, wrapMt) + innerMt;
+      buttonTop = bodyTop + bodyH + innerMb + wrapMb;
+      cardH = buttonTop + buttonH + em + 2;
+    } else {
+      var geo = computeV3Geometry(stageW, stageH);
+      cardW = geo.playW - 2 * geo.inset;
+      em = cardW / 30;
+      contentW = Math.max(cardW - em - 2, em * 4);
+      bodyFont = em + "px " + BODY_FONT;
+      maxLine = 0;
+      rawLines.forEach(function (line) { maxLine = Math.max(maxLine, measure(line, bodyFont)); });
+      bodyW = Math.min(maxLine, contentW);
+      lines = wrapAll(rawLines, bodyW, bodyFont);
+      titleH = 4 * em;
+      titleMt = 0;
+      titleMb = 0;
+      wrapMt = 0;
+      innerMt = em;
+      innerMb = em;
+      wrapMb = 0;
+      buttonH = 3.5 * em;
+      bodyH = lines.length * em;
+      bodyTop = em + titleH + innerMt;
+      buttonTop = bodyTop + bodyH + innerMb;
+      cardH = buttonTop + buttonH + em + 2;
+    }
 
+    return {
+      em: em, v4: v4, cardW: cardW, cardH: cardH, bodyW: bodyW, maxLine: maxLine,
+      lines: lines, padT: em, titleMt: titleMt, titleH: titleH,
+      bodyTop: bodyTop, buttonH: buttonH, buttonTop: buttonTop,
+      titleMb: titleMb
+    };
+  }
+
+  function wrapAll(rawLines, bodyW, bodyFont) {
     var lines = [];
     rawLines.forEach(function (line) {
       if (!line) { lines.push(""); return; }
       wrapLine(line, bodyW, bodyFont).forEach(function (l) { lines.push(l); });
     });
+    return lines;
+  }
 
-    var titleH = 4 * em;
-    var padT = em;
-    var padB = em;
-    var titleMt = v4 ? 2 * em : 0;
-    var titleMb = v4 ? 3 * em : 0;
-    var wrapMt = v4 ? 2 * em : 0;
-    var innerMt = em;
-    var innerMb = em;
-    var wrapMb = v4 ? em : 0;
-    var buttonH = v4 ? 3 * em : 2 * em;
-    var bodyH = lines.length * em;
-
-    var bodyTop = padT + titleMt + titleH + Math.max(titleMb, wrapMt) + innerMt;
-    var buttonTop = bodyTop + bodyH + innerMb + wrapMb;
-    var cardH = buttonTop + buttonH + padB + border * 2;
-
-    return {
-      em: em, v4: v4, cardW: cardW, cardH: cardH, bodyW: bodyW, maxLine: maxLine,
-      lines: lines, padT: padT, titleMt: titleMt, titleH: titleH,
-      bodyTop: bodyTop, buttonH: buttonH, buttonTop: buttonTop
-    };
+  function presetUrl(code) {
+    return BG_BASE_PREFIX + code + ".jpg";
   }
 
   function renderCert() {
     var text = currentText();
     var stageW = stage.clientWidth || 800;
-    var L = computeLayout(stageW, text);
+    var stageH = stage.clientHeight || stageW * 0.75;
+    var L = computeLayout(stageW, stageH, text);
 
     cert.className = "cert " + (L.v4 ? "style-v4" : "style-v3");
     cert.style.fontSize = L.em + "px";
     cert.style.width = L.cardW + "px";
 
     var title = document.querySelector(".cert .title");
-    title.style.margin = L.v4
-      ? (2 * L.em) + "px 0 " + (3 * L.em) + "px"
-      : "0";
+    title.style.margin = L.v4 ? (2 * L.em) + "px 0 " + (3 * L.em) + "px" : "0";
 
     certBody.style.width = L.bodyW + "px";
     certBody.replaceChildren();
@@ -811,54 +1002,206 @@
   }
 
   function applyUI() {
-    var u = UI[state.lang];
     document.documentElement.lang = state.lang;
-    document.title = u.appTitle;
-    $("appTitle").textContent = u.appTitle;
-    $("appSub").textContent = u.appSub;
-    $("ctrlTitle").textContent = u.controls;
-    $("lblName").textContent = u.name;
-    $("lblRank").textContent = u.rank;
-    $("lblDate").textContent = u.date;
-    $("lblMode").textContent = u.mode;
-    $("lblFour").textContent = u.four;
-    $("lblThree").textContent = u.three;
-    $("lblStyle").textContent = u.style;
-    $("optV4").textContent = u.styleV4;
-    $("optV3").textContent = u.styleV3;
-    $("langLabel").textContent = u.language;
-    $("replayBtn").textContent = u.replay;
-    $("exportBtn").textContent = u.export;
-    $("lblPreview").textContent = u.preview;
-    $("fadeHint").textContent = u.fadeHint;
-    $("exportHint").textContent = u.exportHint;
-    $("note").textContent = u.note;
-    $("disclaimer").textContent = u.disclaimer;
-    $("nameInput").placeholder = u.namePh;
+    document.title = t("appTitle");
+    $("appTitle").textContent = t("appTitle");
+    $("appSub").textContent = t("appSub");
+    $("ctrlTitle").textContent = t("controls");
+    $("lblName").textContent = t("name");
+    $("lblRank").textContent = t("rank");
+    $("lblDate").textContent = t("date");
+    $("lblMode").textContent = t("mode");
+    $("lblFour").textContent = t("four");
+    $("lblThree").textContent = t("three");
+    $("lblStyle").textContent = t("style");
+    $("optV4").textContent = t("styleV4");
+    $("optV3").textContent = t("styleV3");
+    $("langLabel").textContent = t("language");
+    $("replayBtn").textContent = t("replay");
+    $("exportBtn").textContent = t("export");
+    $("lblPreview").textContent = t("preview");
+    $("fadeHint").textContent = t("fadeHint");
+    $("exportHint").textContent = t("exportHint");
+    $("note").textContent = t("note");
+    $("disclaimer").textContent = t("disclaimer");
+    $("nameInput").placeholder = t("namePh");
+
+    $("lblBackground").textContent = t("background");
+    $("lblVignette").textContent = t("vignette");
+    $("uploadBgBtn").textContent = t("upload");
+    $("resetBgBtn").textContent = t("resetBg");
+    $("bgNote").textContent = t("bgNote");
+    $("rankNote").textContent = t("rankNote");
+    $("rankInput").placeholder = t("rankPh");
+
     $("langSelect").value = state.lang;
-    rebuildRanks();
+    rebuildRankList();
+    buildSwatches();
+    updateBgName();
   }
 
-  function rebuildRanks() {
-    var sel = $("rankSelect");
+  function rebuildRankList() {
+    var list = $("rankList");
     var showHint = state.lang !== "ja" && state.lang !== "zh";
-    sel.replaceChildren();
+    list.replaceChildren();
     RANKS.forEach(function (rank, i) {
       var opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = showHint ? rank + " — " + RANK_HINTS[i] : rank;
-      sel.appendChild(opt);
+      opt.value = rank;
+      if (showHint) opt.label = RANK_HINTS[i];
+      list.appendChild(opt);
     });
-    sel.value = String(state.rank);
   }
 
-  function syncInputs() {
-    $("nameInput").value = state.name;
-    $("dateInput").value = state.date;
-    $("styleSelect").value = state.style;
-    var radios = document.querySelectorAll('input[name="mode"]');
-    radios.forEach(function (r) { r.checked = (r.value === "three") === state.three; });
-    $("rankSelect").value = String(state.rank);
+  function buildSwatches() {
+    var wrap = $("swatches");
+    wrap.replaceChildren();
+    BG_PRESETS.forEach(function (p, i) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "swatch";
+      btn.dataset.code = p.code;
+      btn.style.backgroundImage = 'url("' + presetUrl(p.code) + '")';
+      btn.title = colorName(p.color);
+      btn.setAttribute("aria-label", colorName(p.color));
+      btn.addEventListener("click", function () {
+        state.bgMode = "preset";
+        state.bgPreset = p.code;
+        updateSwatchState();
+        updateStageBg();
+        updateBgName();
+      });
+      wrap.appendChild(btn);
+    });
+
+    var none = document.createElement("button");
+    none.type = "button";
+    none.className = "swatch swatch-none";
+    none.dataset.code = "none";
+    none.title = t("noneColor");
+    none.setAttribute("aria-label", t("noneColor"));
+    none.addEventListener("click", function () {
+      state.bgMode = "none";
+      updateSwatchState();
+      updateStageBg();
+      updateBgName();
+    });
+    wrap.appendChild(none);
+
+    if (state.customBg) {
+      var custom = document.createElement("button");
+      custom.type = "button";
+      custom.className = "swatch";
+      custom.dataset.code = "custom";
+      custom.style.backgroundImage = 'url("' + state.customBg.url + '")';
+      custom.title = t("custom");
+      custom.setAttribute("aria-label", t("custom"));
+      custom.addEventListener("click", function () {
+        state.bgMode = "custom";
+        updateSwatchState();
+        updateStageBg();
+        updateBgName();
+      });
+      wrap.appendChild(custom);
+    }
+
+    updateSwatchState();
+  }
+
+  function updateSwatchState() {
+    var nodes = $("swatches").querySelectorAll(".swatch");
+    Array.prototype.forEach.call(nodes, function (el) {
+      var code = el.dataset.code;
+      var active = false;
+      if (code === "none") active = state.bgMode === "none";
+      else if (code === "custom") active = state.bgMode === "custom";
+      else active = state.bgMode === "preset" && state.bgPreset === code;
+      el.classList.toggle("active", active);
+    });
+    $("uploadBgBtn").classList.toggle("active", state.bgMode === "custom");
+
+    // 语言切换后更新颜色提示
+    var presets = $("swatches").querySelectorAll(".swatch[data-code]");
+    Array.prototype.forEach.call(presets, function (el, i) {
+      if (i < BG_PRESETS.length) {
+        var p = BG_PRESETS[i];
+        el.title = colorName(p.color);
+        el.setAttribute("aria-label", colorName(p.color));
+      }
+    });
+  }
+
+  function updateStageBg() {
+    var base = null;
+    if (state.bgMode === "custom" && state.customBg) base = state.customBg.url;
+    else if (state.bgMode === "preset") base = presetUrl(state.bgPreset);
+    if (!base) {
+      stage.style.backgroundImage = "none";
+      stage.style.backgroundColor = "#000";
+      return;
+    }
+    var layers = [];
+    if (state.vignette) layers.push('url("' + VIGNETTE_URL + '")');
+    layers.push('url("' + base + '")');
+    stage.style.backgroundImage = layers.join(",");
+    stage.style.backgroundSize = layers.map(function () { return "cover"; }).join(",");
+    stage.style.backgroundPosition = layers.map(function () { return "center center"; }).join(",");
+    stage.style.backgroundRepeat = layers.map(function () { return "no-repeat"; }).join(",");
+    stage.style.backgroundColor = "#000";
+  }
+
+  function updateBgName() {
+    var el = $("bgName");
+    if (state.bgMode === "none") {
+      el.textContent = t("noneColor");
+    } else if (state.bgMode === "custom" && state.customBg) {
+      el.textContent = t("custom") + " · " + state.customBg.name;
+    } else {
+      var idx = -1;
+      BG_PRESETS.forEach(function (p, i) { if (p.code === state.bgPreset) idx = i; });
+      el.textContent = t("tenhouPreset") + (idx >= 0 ? " · " + colorName(idx) : "");
+    }
+  }
+
+  function loadImage(url, useCors) {
+    if (imgCache.has(url)) return imgCache.get(url);
+    var p = new Promise(function (resolve, reject) {
+      var img = new Image();
+      if (useCors) img.crossOrigin = "anonymous";
+      img.onload = function () { resolve(img); };
+      img.onerror = function () { reject(new Error("image load failed")); };
+      img.src = url;
+    });
+    imgCache.set(url, p);
+    return p;
+  }
+
+  function getBgImages() {
+    var baseP = null;
+    var vigP = null;
+    if (state.bgMode === "custom" && state.customBg) {
+      baseP = Promise.resolve(state.customBg.img);
+    } else if (state.bgMode === "preset") {
+      baseP = loadImage(presetUrl(state.bgPreset), true);
+    }
+    if (state.vignette && state.bgMode !== "none") {
+      vigP = loadImage(VIGNETTE_URL, true);
+    }
+    return Promise.all([
+      baseP ? baseP.catch(function () { return null; }) : Promise.resolve(null),
+      vigP ? vigP.catch(function () { return null; }) : Promise.resolve(null)
+    ]).then(function (arr) {
+      return { base: arr[0], vig: arr[1] };
+    });
+  }
+
+  function drawCover(ctx, img, W, H) {
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    var s = Math.max(W / iw, H / ih);
+    var w = iw * s;
+    var h = ih * s;
+    ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
   }
 
   function download(blob, filename) {
@@ -878,11 +1221,6 @@
     var cardX = (W - L.cardW) / 2;
     var cardY = (H - L.cardH) / 2;
     var border = 1;
-    var innerX = cardX + border;
-    var innerY = cardY + border;
-
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, W, H);
 
     ctx.fillStyle = v4 ? "rgba(0,0,0,0.90)" : "rgba(0,0,0,0.85)";
     ctx.fillRect(cardX, cardY, L.cardW, L.cardH);
@@ -894,26 +1232,26 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = 4 * em + "px " + TITLE_FONT;
-    var titleY = innerY + L.padT + L.titleMt + L.titleH / 2;
-    ctx.fillText("認定", innerX + L.cardW / 2, titleY);
+    var titleY = cardY + border + L.padT + L.titleMt + L.titleH / 2;
+    ctx.fillText("認定", cardX + L.cardW / 2, titleY);
 
     ctx.font = em + "px " + BODY_FONT;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    var bodyX = innerX + (L.cardW - L.bodyW) / 2;
-    var y = innerY + L.bodyTop;
+    var bodyX = cardX + (L.cardW - L.bodyW) / 2;
+    var y = cardY + border + L.bodyTop;
     L.lines.forEach(function (line) {
       if (line) ctx.fillText(line, bodyX, y + em / 2);
       y += em;
     });
 
-    var btnW = v4 ? 8 * em : measure("OK", em + "px " + BODY_FONT) + 4 * em;
-    var btnX = innerX + (L.cardW - btnW) / 2;
-    var btnY = innerY + L.buttonTop;
-
+    var btnY = cardY + border + L.buttonTop;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+
     if (v4) {
+      var btnW = 8 * em;
+      var btnX = cardX + (L.cardW - btnW) / 2;
       var grad = ctx.createLinearGradient(0, btnY, 0, btnY + L.buttonH);
       grad.addColorStop(0, "rgba(0,0,0,0.7)");
       grad.addColorStop(0.5, "rgba(107,107,107,0.5)");
@@ -935,26 +1273,39 @@
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
     } else {
-      ctx.fillStyle = "#efefef";
-      ctx.fillRect(btnX, btnY, btnW, L.buttonH);
-      ctx.strokeStyle = "#999";
+      var btnFont = 1.75 * em;
+      var btnW2 = measure("OK", btnFont + "px " + BODY_FONT) + 7 * em;
+      var btnX2 = cardX + (L.cardW - btnW2) / 2;
+      var grad2 = ctx.createLinearGradient(0, btnY, 0, btnY + L.buttonH);
+      grad2.addColorStop(0, "rgba(0,0,0,0.4)");
+      grad2.addColorStop(0.5, "rgba(167,147,127,0.4)");
+      grad2.addColorStop(0.51, "rgba(31,31,31,0.4)");
+      grad2.addColorStop(1, "rgba(0,0,0,0.4)");
+      ctx.fillStyle = grad2;
+      ctx.fillRect(btnX2, btnY, btnW2, L.buttonH);
+      ctx.strokeStyle = "#444";
       ctx.lineWidth = 1;
-      ctx.strokeRect(btnX + 0.5, btnY + 0.5, btnW - 1, L.buttonH - 1);
-      ctx.font = em + "px " + BODY_FONT;
-      ctx.fillStyle = "#000";
-      ctx.fillText("OK", btnX + btnW / 2, btnY + L.buttonH / 2);
+      ctx.strokeRect(btnX2 + 0.5, btnY + 0.5, btnW2 - 1, L.buttonH - 1);
+      ctx.font = btnFont + "px " + BODY_FONT;
+      ctx.fillStyle = "#fff";
+      ctx.fillText("OK", btnX2 + btnW2 / 2, btnY + L.buttonH / 2);
     }
   }
 
-  function makeExportCanvas() {
+  function makeExportCanvas(bg) {
     var W = EXPORT_W;
     var H = EXPORT_H;
-    var L = computeLayout(W, currentText());
+    var L = computeLayout(W, H, currentText());
     var canvas = document.createElement("canvas");
     canvas.width = W * EXPORT_SCALE;
     canvas.height = H * EXPORT_SCALE;
     var ctx = canvas.getContext("2d");
     ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+    if (bg && bg.base) drawCover(ctx, bg.base, W, H);
+    if (bg && bg.vig) drawCover(ctx, bg.vig, W, H);
     drawCert(ctx, W, H, L);
     return canvas;
   }
@@ -962,9 +1313,9 @@
   function exportPNG() {
     var btn = $("exportBtn");
     btn.disabled = true;
-    ensureFont().then(function () {
+    ensureFont().then(getBgImages).then(function (bg) {
       try {
-        var canvas = makeExportCanvas();
+        var canvas = makeExportCanvas(bg);
         canvas.toBlob(function (blob) {
           if (!blob) throw new Error("toBlob returned null");
           download(blob, "tenhou-nintei-" + state.lang + "-" + (state.date || defaultDate).replace(/-/g, "") + ".png");
@@ -978,6 +1329,16 @@
       btn.disabled = false;
       alert(t("exportError") + (err && err.message ? err.message : err));
     });
+  }
+
+  function syncInputs() {
+    $("nameInput").value = state.name;
+    $("rankInput").value = state.rankText;
+    $("dateInput").value = state.date;
+    $("styleSelect").value = state.style;
+    var radios = document.querySelectorAll('input[name="mode"]');
+    Array.prototype.forEach.call(radios, function (r) { r.checked = (r.value === "three") === state.three; });
+    $("vignetteChk").checked = state.vignette;
   }
 
   function bindEvents() {
@@ -995,8 +1356,8 @@
       showInstant();
     });
 
-    $("rankSelect").addEventListener("change", function (e) {
-      state.rank = Number(e.target.value) || 0;
+    $("rankInput").addEventListener("input", function (e) {
+      state.rankText = e.target.value;
       renderCert();
       showInstant();
     });
@@ -1007,7 +1368,7 @@
       showInstant();
     });
 
-    document.querySelectorAll('input[name="mode"]').forEach(function (radio) {
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="mode"]'), function (radio) {
       radio.addEventListener("change", function (e) {
         state.three = e.target.value === "three";
         renderCert();
@@ -1021,6 +1382,55 @@
       showInstant();
     });
 
+    $("uploadBgBtn").addEventListener("click", function () { $("bgFile").click(); });
+    $("bgFile").addEventListener("change", function (e) {
+      var file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        alert(t("bgError") + file.name);
+        return;
+      }
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        if (state.customBg && state.customBg.url !== url) URL.revokeObjectURL(state.customBg.url);
+        state.customBg = { url: url, img: img, name: file.name };
+        state.bgMode = "custom";
+        buildSwatches();
+        updateStageBg();
+        updateBgName();
+        renderCert();
+        showInstant();
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        alert(t("bgError") + file.name);
+      };
+      img.src = url;
+    });
+
+    $("resetBgBtn").addEventListener("click", function () {
+      if (state.customBg) {
+        URL.revokeObjectURL(state.customBg.url);
+        state.customBg = null;
+      }
+      state.bgMode = "preset";
+      state.bgPreset = DEFAULT_BG;
+      state.vignette = true;
+      $("vignetteChk").checked = true;
+      buildSwatches();
+      updateStageBg();
+      updateBgName();
+      renderCert();
+      showInstant();
+    });
+
+    $("vignetteChk").addEventListener("change", function (e) {
+      state.vignette = e.target.checked;
+      updateStageBg();
+    });
+
     $("replayBtn").addEventListener("click", playFade);
     $("exportBtn").addEventListener("click", exportPNG);
     $("certOk").addEventListener("click", function (e) { e.preventDefault(); });
@@ -1029,9 +1439,7 @@
       var raf = null;
       new ResizeObserver(function () {
         if (raf) cancelAnimationFrame(raf);
-        raf = requestAnimationFrame(function () {
-          renderCert();
-        });
+        raf = requestAnimationFrame(function () { renderCert(); });
       }).observe(stage);
     }
   }
@@ -1047,6 +1455,7 @@
 
     applyUI();
     syncInputs();
+    updateStageBg();
     renderCert();
     bindEvents();
     setTimeout(playFade, 100);
@@ -1060,11 +1469,12 @@
   window.__tenhouNintei = {
     render: renderCert,
     exportDataURL: function () {
-      return ensureFont().then(function () {
-        return makeExportCanvas().toDataURL("image/png");
+      return ensureFont().then(getBgImages).then(function (bg) {
+        return makeExportCanvas(bg).toDataURL("image/png");
       });
     },
-    state: state
+    state: state,
+    updateStageBg: updateStageBg
   };
 
   init();
